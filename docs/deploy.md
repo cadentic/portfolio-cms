@@ -1,26 +1,32 @@
 # Deploying to cadentic.dev
 
-Two targets share the same images, the same `secret.tfvars` and the same
-Ansible playbook. Pick one.
+Three targets share the same images, the same `secret.tfvars` and the same
+Ansible playbook. Pick one; [tools/cloudmigrate](../tools/cloudmigrate/README.md)
+moves the site (and its database and media) from one to another later.
 
-| | Google Cloud Run (`target=gcp`) | Azure Container Apps (`target=azure`) |
-| --- | --- | --- |
-| Web | Public service, scales to zero | External ingress, 1–4 replicas |
-| API | IAM-only; web calls it with an identity token | Internal ingress only |
-| Worker | Always-on instance, CPU not throttled | 1 replica, no ingress |
-| Secrets | Secret Manager | Container App secrets |
-| Images | Artifact Registry | Azure Container Registry |
-| Domain | Cloud Run domain mapping + Google-managed cert | Custom domain + free managed cert |
+| | Google Cloud Run (`target=gcp`) | Azure Container Apps (`target=azure`) | Any VPS (`target=vps`) |
+| --- | --- | --- | --- |
+| Web | Public service, scales to zero | External ingress, 1–4 replicas | Caddy in front, HTTPS by Let's Encrypt |
+| API | IAM-only; web calls it with an identity token | Internal ingress only | Container network only |
+| Worker | Always-on instance, CPU not throttled | 1 replica, no ingress | 1 container |
+| Database | Neon | Neon | Neon, or PostgreSQL 18 on the server (`vps_local_db`) |
+| Media | Private bucket (GCS or Azure) | Private bucket (Azure or GCS) | Bucket, or a volume on the server |
+| Secrets | Secret Manager | Container App secrets | `.env` on the server (mode 0600) |
+| Images | Artifact Registry | Azure Container Registry | Built here, copied over SSH |
+| Domain | Cloud Run domain mapping + Google-managed cert | Custom domain + free managed cert | Caddy certificate |
 
-The database is Neon Postgres for both. DNS is Cloudflare for both, as
-DNS-only records: the managed certificates on both clouds are validated over
-plain DNS, so turning on Cloudflare's proxy would stop them renewing.
+DNS stays on Cloudflare for every target, as DNS-only records: the managed
+certificates are validated over plain DNS, so turning on Cloudflare's proxy
+would stop them renewing. The `dns/` Terraform root owns every record and
+points the site records at whichever target was deployed last; the mail
+records (SPF, DKIM, DMARC) never change.
 
 ## 1. One-time setup (by hand)
 
-1. **Neon**: create a project and a database named `portfolio` in the Neon
-   console. Copy the pooled connection string (it ends in
-   `sslmode=require`). The API creates its tables on first start; Terraform and
+1. **Neon**: create a project (PostgreSQL 18) and a database named `portfolio` in the Neon
+   console. Copy the direct connection string: in Connect, turn "Connection
+   pooling" off so the host has no `-pooler` (the API's start-up migrations use
+   session locks, which the pooler does not support). It ends in `sslmode=require`. The API creates its tables on first start; Terraform and
    Ansible never create databases.
 2. **Firebase**: create a project, enable Authentication with the Google
    provider, add `cadentic.dev` to Authentication → Settings → Authorized
@@ -30,12 +36,23 @@ plain DNS, so turning on Cloudflare's proxy would stop them renewing.
    records they show into `email_dns_records` in `secret.tfvars`.
 4. **Cloudflare**: create an API token with Zone → DNS → Edit for
    `cadentic.dev` and note the zone id.
-5. **Cloud**:
+5. **Where the site runs**:
    - GCP: create a project with billing, then `gcloud auth login` and
      `gcloud auth application-default login`. Verify `cadentic.dev` in Google
      Search Console with the same account (domain mappings require it).
    - Azure: `az login`, and `az extension add --name containerapp`.
-6. Install Docker (with buildx), Terraform 1.9+ and `ansible-core`.
+   - VPS: a server with a public IPv4 address and root SSH (or a user with
+     passwordless sudo), running Ubuntu/Debian or AlmaLinux/Rocky without a
+     control panel; cPanel's web server would hold ports 80 and 443. A Bluehost
+     **VPS or dedicated** plan works; Bluehost shared hosting cannot run Docker.
+     Set up key login (`ssh-copy-id root@<ip>`). The playbook installs Docker.
+6. **Media bucket** (optional on a VPS, needed on Cloud Run and Azure): see
+   [Media](#media) below. The bucket may sit in another Google Cloud project or
+   Azure subscription than the site.
+7. Install Docker (with buildx), Terraform 1.9+ and `ansible-core` on the
+   machine you deploy from. On Windows, use WSL and keep the clone inside the
+   WSL home directory (not under `/mnt/c`), where file permissions and line
+   endings behave.
 
 ## 2. Secrets
 
@@ -44,35 +61,45 @@ cp infra/terraform/secret.tfvars.example infra/terraform/secret.tfvars
 ```
 
 Fill in every value. The file is git-ignored. It is the only place secrets
-live: Terraform copies them into Secret Manager or Container App secrets, and
-the API reads them as environment variables. Provider keys never reach the
-browser, API responses, logs or git; the admin console only stores the *names*
-of the env vars that hold them (`EMAIL_BREVO_API_KEY` and so on).
+live: Terraform copies them into Secret Manager, Container App secrets or the
+server's `.env`, and the API reads them as environment variables. Provider keys
+never reach the browser, API responses, logs or git; the admin console only
+stores the *names* of the env vars that hold them (`EMAIL_BREVO_API_KEY` and so
+on).
 
 Terraform state also contains these values. Before the first real deploy,
-uncomment the `backend` block in `infra/terraform/<target>/main.tf` and point
-it at a private, encrypted bucket or storage account.
+uncomment the `backend` block in each root you use (`infra/terraform/<target>/`,
+`dns/` and `media-gcs/` or `media-azure/`) and point it at a private, encrypted
+bucket or storage account.
+
+`infra/terraform/shared-variables.tf` is copied into every root. Edit the top
+copy and run `scripts/sync-terraform-vars.sh`; CI checks the copies match.
 
 ## 3. Deploy
 
 ```sh
 cd infra/ansible
-ansible-playbook deploy.yml -e target=gcp      # or target=azure
+ansible-playbook deploy.yml -e target=gcp      # or target=azure, or target=vps
 ```
 
 The playbook:
 
-1. creates the image registry,
-2. builds `api` and `web` for linux/amd64, tagged with the git commit, and pushes them,
-3. applies Terraform (services, secrets, DNS, SPF/DKIM/DMARC),
-4. on Azure, issues the free managed certificates for `cadentic.dev` and `www`,
-5. smoke-tests the service URL and the domain.
+1. creates or updates the media bucket named by `media_storage`, if any,
+2. builds `api` and `web`, tagged with the git commit (a build with
+   uncommitted changes, allowed by `-e allow_dirty=true`, gets a `-dirty-<time>` tag),
+3. on Cloud Run and Azure: pushes the images and applies Terraform;
+   on a VPS: installs Docker if needed, copies the images, `compose.yml`,
+   `Caddyfile` and `.env` to `vps_dir` (default `/opt/portfolio`) and starts the stack,
+4. smoke-tests the service,
+5. points the domain at it (`dns/` root) and, on Azure, issues the managed
+   certificates. `-e switch_dns=false` skips this step.
 
-It refuses to deploy uncommitted changes (`-e allow_dirty=true` overrides).
 Run it again for every release; unchanged infrastructure is left alone.
-
 The first certificate can take 15–60 minutes after DNS is in place. Until then
 the summary says the domain is "not reachable yet".
+
+On a VPS: `ssh root@<ip> 'cd /opt/portfolio && docker compose ps'` shows the
+stack, and `docker compose logs -f api` its logs.
 
 ## 4. After the first deploy
 
@@ -91,6 +118,57 @@ the summary says the domain is "not reachable yet".
 5. **DMARC**: start with `dmarc_policy = "quarantine"` (or `none`) and a
    `dmarc_rua` mailbox. After a few weeks of clean reports, switch to `reject`
    and redeploy.
+6. **Media**: copy the WordPress images into the bucket (next section).
+
+## Media
+
+Uploads and the imported WordPress images live in one private place, set by
+`media_storage` in `secret.tfvars`:
+
+| `media_storage` | Where | Created by |
+| --- | --- | --- |
+| `local` | The `media` volume on the VPS. Cloud Run and Container Apps discard local files, so use a bucket there. | the VPS stack |
+| `gcs` | A Google Cloud Storage bucket, `media_gcs_bucket`, in `media_gcs_project_id` (or the site's project) | `infra/terraform/media-gcs` |
+| `azure` | An Azure Blob container, `media_azure_account`/`media_azure_container`, in `media_azure_subscription_id` (or the site's subscription, same Entra tenant) | `infra/terraform/media-azure` |
+
+Visitors never reach the bucket. The site serves files at `/media/<key>`
+through the API, so the bucket stays private:
+
+- **Nothing is public.** Google: public access prevention enforced, uniform
+  bucket-level access (no per-object ACLs). Azure: anonymous blob access off,
+  private container, HTTPS and TLS 1.2+ only, no cross-tenant replication.
+- **Only the site's API can use it, and only this bucket.** On Cloud Run, the
+  API's service account gets `roles/storage.objectUser` on the bucket alone; on
+  Azure, the API's own managed identity gets Storage Blob Data Contributor on
+  the container alone. Neither has any project- or subscription-wide storage
+  role, and the web container has no access at all.
+- **A site outside the bucket's cloud** (a VPS, or Azure with a Google bucket
+  and the other way round) needs `media_access_key = true`. Google: a
+  dedicated service account whose only permission is object access on this
+  bucket, and a key for it. Azure: a SAS token limited to this container (no
+  account-wide SAS), renewed every 6 months on deploy and valid for 18. Without
+  `media_access_key`, the Azure account keys are switched off entirely. The key
+  goes into the site's secrets, never into git. Organisations that block
+  service-account keys (`iam.disableServiceAccountKeyCreation`) need an
+  exception for the media project, or an Azure container for a VPS.
+- **Deletes can be undone for 7 days** (soft delete), and Terraform refuses to
+  delete the bucket or storage account (`prevent_destroy`).
+- On Azure, whoever runs Terraform also gets Storage Blob Data Contributor on
+  the container, so `az --auth-mode login` and the migration tool can copy files.
+
+After the bucket exists (first deploy with `media_storage` set), copy the
+WordPress images into it once:
+
+```sh
+python3 tools/cloudmigrate/cloudmigrate.py media copy frontend/public/media gcs   # or azure, or vps
+```
+
+## Moving to another host
+
+`tools/cloudmigrate` deploys the new host, optionally copies the database
+(Neon ↔ the VPS container) with the old one read-only during the copy, checks
+every table, and switches DNS last. See
+[tools/cloudmigrate/README.md](../tools/cloudmigrate/README.md).
 
 ## Email authentication
 
