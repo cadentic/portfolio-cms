@@ -28,6 +28,13 @@ is edited in the console under Subscribers & Email → Settings and Providers.
 | `EMAIL_MAILJET_WEBHOOK_SECRET` | for Mailjet | | Password for the Mailjet webhook URL |
 | `EMAIL_*` (any) | | | Providers added in the console may reference any variable matching `EMAIL_[A-Z0-9_]{2,64}` |
 | `RESUME_FILE_PATH` | | | PDF served after email verification |
+| `MEDIA_STORAGE` | | `local` | Where admin uploads are kept: `local`, `gcs` or `azure`. Buckets stay private; files are served only through `GET /media/<key>` |
+| `MEDIA_LOCAL_DIR` | | `/data/media` | Directory for `local` storage (a Docker volume locally) |
+| `MEDIA_MAX_UPLOAD_MB` | | `30` | Largest accepted upload. Keep it under 32 on Cloud Run, whose HTTP/1 request limit is 32 MiB |
+| `MEDIA_GCS_BUCKET` | for `gcs` | | Bucket name. The bucket may live in another Google Cloud project |
+| `MEDIA_GCS_CREDENTIALS` | | | Service-account key JSON (one line), for hosts outside Google Cloud. Empty uses the Cloud Run service account via the metadata server |
+| `MEDIA_AZURE_ACCOUNT`, `MEDIA_AZURE_CONTAINER` | for `azure` | | Storage account and container. The account may live in another subscription |
+| `MEDIA_AZURE_SAS` | | | Container SAS token without the leading `?`, for hosts outside Azure. Empty uses the managed identity (`IDENTITY_ENDPOINT`, `IDENTITY_HEADER`, and `AZURE_CLIENT_ID` for a user-assigned identity) |
 | `GTM_ID`, `GA4_MEASUREMENT_ID` | | | Analytics, loaded only after visitor consent |
 | `BLOG_ENABLED` | | `true` | Hide the blog section |
 | `TRUST_CLIENT_IP_HEADER` | | `false` | Take the visitor IP from `X-Client-IP` set by the web server. Only when the API is reachable solely through it |
@@ -41,7 +48,7 @@ is edited in the console under Subscribers & Email → Settings and Providers.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `API_INTERNAL_URL` | `http://localhost:8080` | Where `/api`, `/mcp`, `/oauth` and the SEO files are proxied |
+| `API_INTERNAL_URL` | `http://localhost:8080` | Where `/api`, `/mcp`, `/oauth`, the SEO files and `/media/` are proxied (`/media/` files baked into the image are served first) |
 | `SSR_API_ORIGIN` | `API_INTERNAL_URL` | Origin used by server-side rendering for API calls. On Cloud Run it is the web server itself, so calls carry the identity token |
 | `API_ID_TOKEN_AUDIENCE` | | Cloud Run only: request a Google identity token for this audience and send it as `X-Serverless-Authorization` |
 | `PUBLIC_SITE_URL` | `https://cadentic.dev` | Canonical URLs and Open Graph |

@@ -14,6 +14,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM alpine:3.22 AS runtime
 # CA roots come from the build stage; time zones are embedded in the binary.
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# Default MEDIA_LOCAL_DIR. A named volume mounted here inherits this owner.
+RUN mkdir -p /data/media && chown 10001:10001 /data/media
 USER 10001:10001
 
 FROM runtime AS mock

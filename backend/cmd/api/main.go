@@ -26,6 +26,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/email/smtp"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
+	"github.com/cadentic/portfolio-cms/backend/internal/media"
 	"github.com/cadentic/portfolio-cms/backend/internal/oauth"
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
 	"github.com/cadentic/portfolio-cms/backend/internal/queue"
@@ -113,12 +114,18 @@ func run(log *slog.Logger) error {
 		log.Warn("no ADMIN_UIDS or ADMIN_EMAILS configured: the admin area is locked")
 	}
 
+	mediaStore, err := media.New(cfg)
+	if err != nil {
+		return err
+	}
+
 	srv := &api.Server{
 		Cfg: cfg, DB: db, Log: log, Verifier: verifier, Authorizer: authz, Settings: sets,
 		Providers: provs, Registry: registry, Subscribers: subs, Campaigns: camps, Content: cms,
 		Mailer: mail, Alerts: alertSvc, Limiter: &ratelimit.Limiter{DB: db}, Signer: signer,
 		OAuth: &oauth.Server{DB: db, Issuer: cfg.PublicSiteURL, SiteURL: cfg.PublicSiteURL, Authorizer: authz},
 		MCP:   &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, Log: log, SiteURL: cfg.PublicSiteURL},
+		Media: mediaStore,
 	}
 
 	var wg sync.WaitGroup

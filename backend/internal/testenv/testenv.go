@@ -39,6 +39,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/email/mailjet"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
+	"github.com/cadentic/portfolio-cms/backend/internal/media"
 	"github.com/cadentic/portfolio-cms/backend/internal/mockprovider"
 	"github.com/cadentic/portfolio-cms/backend/internal/oauth"
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
@@ -171,6 +172,10 @@ func New(t *testing.T) *Env {
 		Limiter: &ratelimit.Limiter{DB: db}, Signer: signer,
 		OAuth: &oauth.Server{DB: db, Issuer: SiteURL, SiteURL: SiteURL, Authorizer: authz},
 		MCP:   &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, Log: log, SiteURL: SiteURL},
+	}
+	cfg.MediaMaxUploadBytes = 1 << 20
+	if srv.Media, err = media.NewLocal(t.TempDir()); err != nil {
+		t.Fatalf("media storage: %v", err)
 	}
 	apiHTTP := httptest.NewServer(srv.Routes())
 	t.Cleanup(apiHTTP.Close)

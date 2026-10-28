@@ -25,6 +25,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/email"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
+	"github.com/cadentic/portfolio-cms/backend/internal/media"
 	"github.com/cadentic/portfolio-cms/backend/internal/oauth"
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
@@ -51,6 +52,7 @@ type Server struct {
 	Signer      tokens.Signer
 	OAuth       *oauth.Server
 	MCP         *mcp.Server
+	Media       media.Storage
 }
 
 func (s *Server) Routes() http.Handler {
@@ -61,6 +63,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /metrics", s.metrics)
 
 	s.publicRoutes(mux)
+	mux.HandleFunc("GET /media/{key...}", s.serveMedia)
 	s.webhookRoutes(mux)
 
 	admin := http.NewServeMux()
