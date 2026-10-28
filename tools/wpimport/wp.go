@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,7 +27,7 @@ type wpPost struct {
 	Status        string                  `json:"status"`
 	Type          string                  `json:"type"`
 	Parent        json.RawMessage         `json:"parent"` // false or {"ID":..}
-	MenuOrder     int                     `json:"menu_order"`
+	MenuOrder     flexInt                 `json:"menu_order"`
 	FeaturedImage string                  `json:"featured_image"`
 	Author        wpAuthor                `json:"author"`
 	Tags          map[string]wpTerm       `json:"tags"`
@@ -46,12 +47,29 @@ type wpTerm struct {
 }
 
 type wpAttachment struct {
-	ID       int64  `json:"ID"`
-	URL      string `json:"URL"`
-	MimeType string `json:"mime_type"`
-	Alt      string `json:"alt"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
+	ID       int64   `json:"ID"`
+	URL      string  `json:"URL"`
+	MimeType string  `json:"mime_type"`
+	Alt      string  `json:"alt"`
+	Width    flexInt `json:"width"`
+	Height   flexInt `json:"height"`
+}
+
+// flexInt accepts numbers sent either as JSON numbers or strings ("600").
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" || s == "false" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return nil // unknown format: treat as missing rather than failing the import
+	}
+	*f = flexInt(n)
+	return nil
 }
 
 type wpPage struct {

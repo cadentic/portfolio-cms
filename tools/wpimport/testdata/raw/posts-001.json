@@ -18,7 +18,7 @@
       "author": {"ID": 5, "name": "csayantan"},
       "tags": {"RAC": {"ID": 9, "name": "RAC", "slug": "rac"}},
       "categories": {"Oracle Database Talk": {"ID": 3, "name": "Oracle Database Talk", "slug": "oracle-database-talk"}},
-      "attachments": {"77": {"ID": 77, "URL": "https://csayantan.files.wordpress.com/2011/05/rac.png", "mime_type": "image/png", "alt": "", "width": 800, "height": 600}}
+      "attachments": {"77": {"ID": 77, "URL": "https://csayantan.files.wordpress.com/2011/05/rac.png", "mime_type": "image/png", "alt": "", "width": "800", "height": 600}}
     }
   ]
 }

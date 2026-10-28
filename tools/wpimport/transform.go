@@ -119,7 +119,7 @@ func Transform(posts []wpPost, opt Options) (*Snapshot, error) {
 			AuthorName:          p.Author.Name,
 			OriginalPublishedAt: normalizeTime(p.Date),
 			ParentSourceID:      p.parentID(),
-			MenuOrder:           p.MenuOrder,
+			MenuOrder:           int(p.MenuOrder),
 			Categories:          []string{},
 			Tags:                []string{},
 		}
@@ -221,7 +221,7 @@ func Transform(posts []wpPost, opt Options) (*Snapshot, error) {
 	for _, id := range ids {
 		p, it := byID[id], items[id]
 		for _, a := range p.Attachments {
-			mediaURL(a.URL, a.Alt, a.Width, a.Height)
+			mediaURL(a.URL, a.Alt, int(a.Width), int(a.Height))
 		}
 		it.Blocks = htmlToBlocks(p.Content, rewrite)
 		if it.Blocks == nil {
