@@ -35,8 +35,15 @@ func TestAC07_WebhooksIdempotentOutOfOrder(t *testing.T) {
 			t.Fatalf("webhook: %d %s", r.Status, r.Body)
 		}
 	}
+	// The stable kind-based URL (/api/webhooks/brevo) reaches the same provider.
+	if r := e.Webhook("brevo", delivered, testenv.WebhookSecret); r.Status != 200 {
+		t.Fatalf("webhook by kind: %d %s", r.Status, r.Body)
+	}
+	if r := e.Webhook("no-such-kind", delivered, testenv.WebhookSecret); r.Status != http.StatusNotFound {
+		t.Fatalf("unknown provider ref: %d, want 404", r.Status)
+	}
 	if n := e.Count(`SELECT count(*) FROM email_provider_events WHERE job_id=$1`, id); n != 1 {
-		t.Fatalf("stored %d events for 3 identical deliveries, want 1", n)
+		t.Fatalf("stored %d events for 4 identical deliveries, want 1", n)
 	}
 	// An older "request" event arriving late must not move the status backwards.
 	e.Webhook(e.BrevoID, brevoEvent("request", "reader@example.com", pmid, id, now.Add(-time.Minute)), testenv.WebhookSecret)

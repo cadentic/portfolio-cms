@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"net/http"
 	"os"
@@ -75,7 +76,7 @@ func run(log *slog.Logger) error {
 		baseURLs["mailjet"] = cfg.MailjetBaseURL
 	}
 	provs := &providers.Repo{DB: db, Secrets: providers.EnvSecrets{}, Registry: registry, BaseURLs: baseURLs}
-	if err := seedProviders(ctx, provs, log); err != nil {
+	if err := seedProviders(ctx, db, provs, log); err != nil {
 		return err
 	}
 
@@ -202,7 +203,18 @@ func every(d time.Duration, h queue.Hook) queue.Hook {
 // seedProviders creates the default Brevo (primary) and Mailjet (secondary)
 // entries on first boot. They reference environment variables by name only;
 // a provider is used only once its secrets are present in the environment.
-func seedProviders(ctx context.Context, r *providers.Repo, log *slog.Logger) error {
+func seedProviders(ctx context.Context, db *pgxpool.Pool, r *providers.Repo, log *slog.Logger) error {
+	// API and worker containers can start together; serialise the check-then-insert.
+	conn, err := db.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	const lockID = 7262411002
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+		return err
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockID) //nolint:errcheck
 	existing, err := r.List(ctx)
 	if err != nil || len(existing) > 0 {
 		return err

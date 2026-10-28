@@ -61,7 +61,7 @@ interface Form { id?: string; name: string; kind: string; enabled: boolean; prio
           </tbody>
         </table>
       </div>
-      <p class="a-muted" style="font-size:.8rem;margin:12px 0 0">Webhook URL for each provider: <span class="a-mono">{{ site }}/api/webhooks/&lt;provider id&gt;</span>. Configure the same signing secret at the provider and in the env var named under "Webhook secret".</p>
+      <p class="a-muted" style="font-size:.8rem;margin:12px 0 0">Webhook URL: <span class="a-mono">{{ site }}/api/webhooks/brevo</span> or <span class="a-mono">/mailjet</span> (use <span class="a-mono">/api/webhooks/&lt;provider id&gt;</span> if you have two of the same type). Protect it with HTTP basic auth: user <span class="a-mono">webhook</span>, password = the value of the env var under "Webhook secret".</p>
     </section>
 
     @if (testFor(); as p) {

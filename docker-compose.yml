@@ -1,0 +1,96 @@
+# Local stack: Postgres, API, queue worker, Angular SSR web, mock Brevo/Mailjet
+# and the Firebase Auth emulator. No real email is sent and no cloud account is
+# needed.
+#
+#   cp .env.example .env      # optional; defaults below work as-is
+#   docker compose up --build
+#
+#   Site:            http://localhost:4000
+#   Admin:           http://localhost:4000/admin  (owner@cadentic.dev / localpass123 by default)
+#   Mock providers:  http://localhost:8025        (switch Brevo to "error500" to watch failover)
+name: portfolio-cms
+
+x-api-env: &api-env
+  APP_ENV: development
+  DATABASE_URL: postgres://portfolio:portfolio@db:5432/portfolio?sslmode=disable
+  APP_SECRET: ${APP_SECRET:-local-development-secret-not-for-production-use}
+  PUBLIC_SITE_URL: http://localhost:4000
+  CORS_ALLOWED_ORIGINS: http://localhost:4000
+  TRUSTED_PROXY_HOPS: "1"
+  FIREBASE_PROJECT_ID: demo-cadentic
+  FIREBASE_AUTH_EMULATOR_HOST: auth:9099
+  ADMIN_EMAILS: ${LOCAL_ADMIN_EMAIL:-owner@cadentic.dev}
+  ADMIN_ALERT_EMAIL: ${LOCAL_ADMIN_EMAIL:-owner@cadentic.dev}
+  EMAIL_FROM_ADDRESS: newsletter@cadentic.dev
+  # Real adapters, pointed at the mock instead of api.brevo.com / api.mailjet.com.
+  EMAIL_BREVO_BASE_URL: http://mock:8025
+  EMAIL_MAILJET_BASE_URL: http://mock:8025
+  EMAIL_BREVO_API_KEY: local-brevo-key
+  EMAIL_MAILJET_API_KEY: local-mailjet-key
+  EMAIL_MAILJET_SECRET_KEY: local-mailjet-secret
+  EMAIL_BREVO_WEBHOOK_SECRET: local-brevo-webhook
+  EMAIL_MAILJET_WEBHOOK_SECRET: local-mailjet-webhook
+  RESUME_FILE_PATH: ${RESUME_FILE_PATH:-}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: portfolio
+      POSTGRES_DB: portfolio
+    ports: ["127.0.0.1:${DB_PORT:-5432}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mock:
+    build: { context: ./backend, target: mock }
+    environment:
+      MOCK_WEBHOOK_BREVO_URL: http://webhook:local-brevo-webhook@api:8080/api/webhooks/brevo
+      MOCK_WEBHOOK_MAILJET_URL: http://webhook:local-mailjet-webhook@api:8080/api/webhooks/mailjet
+    ports: ["127.0.0.1:8025:8025"]
+
+  auth:
+    build: ./docker/firebase-auth
+    environment:
+      LOCAL_ADMIN_EMAIL: ${LOCAL_ADMIN_EMAIL:-owner@cadentic.dev}
+      LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-localpass123}
+    ports: ["127.0.0.1:9099:9099"]
+
+  api:
+    build: { context: ./backend, target: api }
+    environment:
+      <<: *api-env
+      RUN_WORKER: "false"
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["127.0.0.1:8080:8080"]
+
+  worker:
+    build: { context: ./backend, target: api }
+    environment:
+      <<: *api-env
+      RUN_WORKER: "true"
+      WORKER_ID: worker-1
+    depends_on:
+      api: { condition: service_healthy }
+      mock: { condition: service_started }
+
+  web:
+    build: ./frontend
+    environment:
+      NODE_ENV: development
+      API_INTERNAL_URL: http://api:8080
+      PUBLIC_SITE_URL: http://localhost:4000
+      FIREBASE_PROJECT_ID: demo-cadentic
+      FIREBASE_AUTH_EMULATOR_URL: http://localhost:9099
+    depends_on:
+      api: { condition: service_healthy }
+    ports: ["127.0.0.1:4000:4000"]
+
+volumes:
+  pgdata:

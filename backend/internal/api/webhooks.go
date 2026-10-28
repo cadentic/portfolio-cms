@@ -21,7 +21,7 @@ func (s *Server) webhookRoutes(mux *http.ServeMux) {
 
 func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	p, err := s.Providers.Get(ctx, r.PathValue("providerID"))
+	p, err := s.Providers.GetByRef(ctx, r.PathValue("providerID"))
 	if err != nil {
 		http.NotFound(w, r)
 		return

@@ -194,6 +194,26 @@ func (r *Repo) Get(ctx context.Context, id string) (*Provider, error) {
 	return p, err
 }
 
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// GetByRef resolves a webhook path segment: a provider id, or a kind such as
+// "brevo" when exactly one provider of that kind exists. The kind form gives a
+// stable webhook URL that survives re-creating the provider.
+func (r *Repo) GetByRef(ctx context.Context, ref string) (*Provider, error) {
+	if uuidRe.MatchString(ref) {
+		return r.Get(ctx, ref)
+	}
+	var id string
+	err := r.DB.QueryRow(ctx, `SELECT min(id::text) FROM email_providers WHERE kind=$1 HAVING count(*) = 1`, ref).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, id)
+}
+
 // RuntimeConfig resolves secrets for one send/health/webhook operation.
 func (r *Repo) RuntimeConfig(p *Provider) email.ProviderConfig {
 	creds := map[string]string{}
