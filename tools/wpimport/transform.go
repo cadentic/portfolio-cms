@@ -83,7 +83,8 @@ type Options struct {
 }
 
 var (
-	reMediaURL = regexp.MustCompile(`^https?://(?:i[0-9]\.wp\.com/)?[a-z0-9-]+\.files\.wordpress\.com/([^?#]+)`)
+	reMediaURL = regexp.MustCompile(`^https?://(?:i[0-9]\.wp\.com/)?(?:[a-z0-9-]+\.files\.wordpress\.com|[a-z0-9-]+\.wordpress\.com/wp-content/uploads)/([^?#]+)`)
+	reWPCDN    = regexp.MustCompile(`^https?://i[0-9]\.wp\.com/(.+)$`)
 	reTags     = regexp.MustCompile(`(?s)<[^>]*>`)
 	reSpace    = regexp.MustCompile(`[ \t\r\f\v]+|\n{2,}`)
 )
@@ -325,8 +326,8 @@ func joinPath(prefix, p string) string {
 
 func canonicalMediaURL(u string) string {
 	// iN.wp.com/<sub>.files.wordpress.com/... is a CDN proxy; fetch the origin.
-	if i := strings.Index(u, ".wp.com/"); i >= 0 && strings.Contains(u[i:], ".files.wordpress.com/") {
-		return "https://" + u[i+len(".wp.com/"):]
+	if m := reWPCDN.FindStringSubmatch(u); m != nil {
+		return "https://" + m[1]
 	}
 	return strings.Replace(u, "http://", "https://", 1)
 }

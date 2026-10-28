@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html"
 	"regexp"
 	"strings"
@@ -83,6 +84,19 @@ func (c *converter) node(n *xhtml.Node) {
 	if dropped[n.DataAtom] || hasClass(n, "sharedaddy", "jp-relatedposts", "wpcnt", "wp-block-buttons") {
 		return
 	}
+	if hasClass(n, "jetpack-slideshow-noscript") {
+		return
+	}
+	// Jetpack slideshows keep their images in a JSON data-gallery attribute.
+	if g := attr(n, "data-gallery"); g != "" {
+		var imgs []struct{ Src, Alt, Caption string }
+		if json.Unmarshal([]byte(g), &imgs) == nil {
+			for _, im := range imgs {
+				c.addImage(im.Src, im.Alt, cleanText(stripTags(im.Caption)))
+			}
+			return
+		}
+	}
 	switch n.DataAtom {
 	case atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6:
 		level := int(n.Data[1] - '0')
@@ -127,9 +141,17 @@ func (c *converter) node(n *xhtml.Node) {
 		if cite != "" {
 			text = strings.TrimSpace(strings.TrimSuffix(text, cite))
 		}
-		if text != "" {
-			c.add(Block{Type: "quote", Text: text, Cite: cite})
+		if text == "" {
+			break
 		}
+		// The old blog used blockquotes as boxes for commands, SQL and
+		// output; those become code blocks.
+		if cite == "" && !looksLikeProse(text) {
+			c.add(Block{Type: "code", Language: guessLanguage(text), Text: codeText(textOf(n))})
+			c.images(n)
+			break
+		}
+		c.add(Block{Type: "quote", Text: text, Cite: cite})
 	case atom.Pre:
 		code := textOf(n)
 		code = strings.Trim(strings.ReplaceAll(code, "\r\n", "\n"), "\n")
@@ -199,6 +221,13 @@ func (c *converter) flush() {
 	if len(run) == 0 {
 		return
 	}
+	// A paragraph that is nothing but bold text was the old blog's way of
+	// writing a subheading.
+	if h := boldOnly(run); h != nil {
+		c.blocks = append(c.blocks, Block{Type: "heading", Level: 3, Text: strings.TrimSpace(strings.TrimRight(cleanText(textOf(h)), ":"))})
+		c.images(h)
+		return
+	}
 	var imgs []*xhtml.Node
 	var b strings.Builder
 	rich := false
@@ -263,6 +292,9 @@ func (c *converter) inlineHTML(b *strings.Builder, n *xhtml.Node, rich *bool, im
 			return
 		}
 	}
+	if tag != "" && strings.TrimSpace(textOf(n)) == "" {
+		tag = "" // empty <code></code>, <strong> </strong>, ...
+	}
 	if tag != "" {
 		*rich = true
 		b.WriteString("<" + tag + ">")
@@ -276,11 +308,19 @@ func (c *converter) inlineHTML(b *strings.Builder, n *xhtml.Node, rich *bool, im
 }
 
 func (c *converter) image(n *xhtml.Node, caption string) {
-	src := c.rewrite(attr(n, "src"))
+	src := attr(n, "data-orig-file")
+	if !reMediaURL.MatchString(src) {
+		src = attr(n, "src")
+	}
+	c.addImage(src, attr(n, "alt"), caption)
+}
+
+func (c *converter) addImage(src, alt, caption string) {
+	src = c.rewrite(src)
 	if src == "" || strings.Contains(src, "pixel.wp.com") || strings.Contains(src, "gravatar.com") {
 		return
 	}
-	alt := strings.TrimSpace(attr(n, "alt"))
+	alt = strings.TrimSpace(alt)
 	h := `<figure><img src="` + html.EscapeString(src) + `" alt="` + html.EscapeString(alt) + `" loading="lazy">`
 	if caption != "" {
 		h += "<figcaption>" + html.EscapeString(caption) + "</figcaption>"
@@ -458,4 +498,82 @@ func cleanText(s string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+var (
+	reCodeHint = regexp.MustCompile(`(?im)^\s*(?:usermod|useradd|groupadd|kill |watch |ps |df |du |top|select|insert|update|delete|alter|create|drop|grant|begin|end;|declare|exec|execute|set |spool|connect|startup|shutdown|recover|restore|backup|run\s*\{|crosscheck|rman|sqlplus|srvctl|crsctl|asmcmd|lsnrctl|opatch|adpatch|adadmin|cd |ls |cp |mv |rm |chmod|chown|mkdir|tar |vi |cat |grep |export |echo |su |sudo |yum |rpm |mount|fdisk|service |\./|/u0|/etc/|/usr/|/dev/|[#$>] |\[[a-z0-9_]+@)`)
+	reSQLHint  = regexp.MustCompile(`(?i)\b(?:select|alter|create|insert|update|grant|v\$|dba_|begin)\b`)
+	reBashHint = regexp.MustCompile(`(?im)^\s*(?:#|\$|\[[a-z0-9_]+@|cd |ls |chmod|chown|mkdir|export |\./|yum |rpm |vi |cat |grep |mount|service )`)
+)
+
+// looksLikeProse reports whether quoted text is a real quotation: a few
+// sentence-like lines with nothing that looks like a command or output.
+func looksLikeProse(text string) bool {
+	lines := strings.Split(text, "\n")
+	if len(lines) > 4 {
+		return false
+	}
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if reCodeHint.MatchString(l) || strings.ContainsAny(l, ";{}=<>|\\$#_") || len(strings.Fields(l)) < 3 {
+			return false
+		}
+	}
+	return true
+}
+
+func guessLanguage(text string) string {
+	sql := len(reSQLHint.FindAllString(text, -1))
+	sh := len(reBashHint.FindAllString(text, -1))
+	switch {
+	case sql > sh:
+		return "sql"
+	case sh > 0:
+		return "bash"
+	}
+	return "plaintext"
+}
+
+// codeText keeps line structure but drops non-breaking spaces and the blank
+// lines left between WordPress paragraphs.
+func codeText(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\u00a0", " ")
+	s = reShortcode.ReplaceAllString(s, "")
+	lines := strings.Split(s, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		l = strings.TrimRight(l, " \t")
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// boldOnly returns the single <strong>/<b> element that makes up an inline
+// run (ignoring whitespace, <br> and empty elements), or nil.
+func boldOnly(run []*xhtml.Node) *xhtml.Node {
+	var found *xhtml.Node
+	for _, n := range run {
+		if strings.TrimSpace(textOf(n)) == "" && n.DataAtom != atom.Img {
+			continue
+		}
+		if found != nil || (n.DataAtom != atom.Strong && n.DataAtom != atom.B) {
+			return nil
+		}
+		found = n
+	}
+	if found == nil {
+		return nil
+	}
+	text := cleanText(textOf(found))
+	if len([]rune(text)) > 140 || strings.Contains(text, "\n") {
+		return nil
+	}
+	for d := range descendants(found) {
+		if d.DataAtom == atom.A {
+			return nil
+		}
+	}
+	return found
 }

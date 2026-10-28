@@ -164,3 +164,26 @@ func TestSeedIsDraftOnly(t *testing.T) {
 		t.Error("every item must be inserted as draft with published_at NULL")
 	}
 }
+
+func TestBlockquoteCommandsBecomeCode(t *testing.T) {
+	b := htmlToBlocks("<blockquote><p>From sqlplus:</p>\n<p>connect / as sysdba</p>\n<p>SELECT name<br />\nFROM v$asm_alias;</p></blockquote><blockquote><p>Keep it simple, and test your backups.</p></blockquote>",
+		func(s string) string { return s })
+	if len(b) != 2 || b[0].Type != "code" || b[0].Language != "sql" ||
+		b[0].Text != "From sqlplus:\nconnect / as sysdba\nSELECT name\nFROM v$asm_alias;" {
+		t.Fatalf("code block = %+v", b)
+	}
+	if b[1].Type != "quote" || b[1].Text != "Keep it simple, and test your backups." {
+		t.Fatalf("quote block = %+v", b[1])
+	}
+}
+
+func TestBoldParagraphBecomesHeading(t *testing.T) {
+	b := htmlToBlocks("<p><strong>Reference Links :</strong></p><p><strong>step 1)</strong> edit the file<code></code></p>",
+		func(s string) string { return s })
+	if len(b) != 2 || b[0].Type != "heading" || b[0].Level != 3 || b[0].Text != "Reference Links" {
+		t.Fatalf("heading = %+v", b)
+	}
+	if b[1].Type != "html" || b[1].HTML != "<p><strong>step 1)</strong> edit the file</p>" {
+		t.Fatalf("paragraph = %+v", b[1])
+	}
+}

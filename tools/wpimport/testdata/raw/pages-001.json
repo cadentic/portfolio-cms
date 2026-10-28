@@ -7,7 +7,7 @@
      "featured_image": "", "author": {"name": "csayantan"}, "tags": {}, "categories": {}, "attachments": {}},
     {"ID": 11, "date": "2011-03-02T00:00:00+00:00", "modified": "2011-03-02T00:00:00+00:00", "title": "oracleasm",
      "URL": "https://csayantan.wordpress.com/11gr2-rac-installation/oracleasm/",
-     "content": "<p>Configure ASMLib:</p>\n<pre class=\"brush: bash; title: ; notranslate\" title=\"\">\n# /etc/init.d/oracleasm configure\nDefault user [oracle]: &lt;grid&gt;\n</pre>\n<table border=\"1\" style=\"x\"><tbody><tr><th>Disk</th><td class=\"c\">/dev/sdb1</td></tr></tbody></table><blockquote><p>Do it as root</p></blockquote><hr />",
+     "content": "<p>Configure ASMLib:</p>\n<pre class=\"brush: bash; title: ; notranslate\" title=\"\">\n# /etc/init.d/oracleasm configure\nDefault user [oracle]: &lt;grid&gt;\n</pre>\n<table border=\"1\" style=\"x\"><tbody><tr><th>Disk</th><td class=\"c\">/dev/sdb1</td></tr></tbody></table><blockquote><p>Always do this as the root user.</p></blockquote><hr />",
      "excerpt": "", "slug": "oracleasm", "status": "publish", "type": "page",
      "parent": {"ID": 10, "type": "page", "link": "x", "title": "11GR2 RAC INSTALLATION"}, "menu_order": "2",
      "featured_image": "", "author": {"name": "csayantan"}, "tags": {}, "categories": {}, "attachments": {}},
