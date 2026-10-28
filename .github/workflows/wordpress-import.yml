@@ -36,8 +36,9 @@ jobs:
         run: scripts/wordpress-import.sh fetch
       - name: Commit content
         run: |
-          git add content/wordpress frontend/public/media/wordpress
-          [ -f backend/internal/store/migrations/0003_wordpress_import.sql ] && git add backend/internal/store/migrations/0003_wordpress_import.sql
+          for p in content/wordpress frontend/public/media/wordpress backend/internal/store/migrations/0003_wordpress_import.sql; do
+            if [ -e "$p" ]; then git add "$p"; fi
+          done
           if git diff --cached --quiet; then echo "No content changes"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
