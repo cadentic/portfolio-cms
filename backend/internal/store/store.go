@@ -66,17 +66,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 		version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+	names, err := migrationNames()
 	if err != nil {
 		return err
 	}
-	var names []string
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".sql") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
 	for _, name := range names {
 		version := strings.TrimSuffix(name, ".sql")
 		var exists bool
@@ -106,6 +99,59 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 			return err
 		}
 		log.Info("migration applied", "version", version)
+	}
+	return nil
+}
+
+func migrationNames() ([]string, error) {
+	entries, err := fs.ReadDir(migrationFS, "migrations")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".sql") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// IsReadOnly reports whether new sessions default to read-only transactions.
+// tools/cloudmigrate sets that on the database while it copies it to another
+// host, so the old deployment keeps serving pages but takes no writes.
+func IsReadOnly(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
+	var v string
+	if err := pool.QueryRow(ctx, `SHOW default_transaction_read_only`).Scan(&v); err != nil {
+		return false, err
+	}
+	return v == "on", nil
+}
+
+// CheckMigrated returns an error unless every embedded migration has been
+// applied. It only reads, so it works on a read-only database.
+func CheckMigrated(ctx context.Context, pool *pgxpool.Pool) error {
+	names, err := migrationNames()
+	if err != nil {
+		return err
+	}
+	var applied []string
+	if err := pool.QueryRow(ctx, `SELECT coalesce(array_agg(version), '{}') FROM schema_migrations`).Scan(&applied); err != nil {
+		return fmt.Errorf("read schema_migrations: %w", err)
+	}
+	done := map[string]bool{}
+	for _, v := range applied {
+		done[v] = true
+	}
+	var pending []string
+	for _, name := range names {
+		if v := strings.TrimSuffix(name, ".sql"); !done[v] {
+			pending = append(pending, v)
+		}
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("migrations not applied: %s", strings.Join(pending, ", "))
 	}
 	return nil
 }

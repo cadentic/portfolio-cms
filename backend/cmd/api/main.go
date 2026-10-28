@@ -59,11 +59,24 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
-	if err := store.Migrate(ctx, db, log); err != nil {
+	// A read-only database is being copied to another host (tools/cloudmigrate).
+	// Keep serving reads, but skip the start-up writes.
+	readOnly, err := store.IsReadOnly(ctx, db)
+	if err != nil {
 		return err
 	}
-	if err := templates.Seed(ctx, db); err != nil {
-		return err
+	if readOnly {
+		log.Warn("database is read-only; skipping migrations and seeding")
+		if err := store.CheckMigrated(ctx, db); err != nil {
+			return err
+		}
+	} else {
+		if err := store.Migrate(ctx, db, log); err != nil {
+			return err
+		}
+		if err := templates.Seed(ctx, db); err != nil {
+			return err
+		}
 	}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
@@ -76,8 +89,10 @@ func run(log *slog.Logger) error {
 		baseURLs["mailjet"] = cfg.MailjetBaseURL
 	}
 	provs := &providers.Repo{DB: db, Secrets: providers.EnvSecrets{}, Registry: registry, BaseURLs: baseURLs}
-	if err := seedProviders(ctx, db, provs, log); err != nil {
-		return err
+	if !readOnly {
+		if err := seedProviders(ctx, db, provs, log); err != nil {
+			return err
+		}
 	}
 
 	sets := settings.NewStore(db, 30*time.Second)
