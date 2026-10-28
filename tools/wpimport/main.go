@@ -6,7 +6,7 @@
 //	wpimport build   turn the raw API files into content/wordpress/snapshot.json,
 //	                 content/wordpress/seed.sql and content/wordpress/redirects.json,
 //	                 and download the images to frontend/public/media/wordpress;
-//	                 the seed is also written as backend migration 0002 so
+//	                 the seed is also written as backend migration 0003 so
 //	                 `docker compose up` loads it
 //
 // The seed is idempotent; load it with scripts/wordpress-import.sh.
@@ -35,7 +35,7 @@ func main() {
 	outDir := fs.String("out", "content/wordpress", "snapshot, seed and raw API output directory")
 	mediaDir := fs.String("media-dir", "frontend/public/media/wordpress", "where images are saved")
 	download := fs.Bool("download-media", true, "download images that are not saved yet")
-	migration := fs.String("migration", "backend/internal/store/migrations/0002_wordpress_import.sql",
+	migration := fs.String("migration", "backend/internal/store/migrations/0003_wordpress_import.sql",
 		"also write the seed as this backend migration (skipped if its directory does not exist; empty disables)")
 	opt := Options{}
 	fs.StringVar(&opt.SiteURL, "site-url", "https://cadentic.dev", "new site origin, for canonical URLs")

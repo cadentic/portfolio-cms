@@ -65,9 +65,9 @@ The cloud build sandbox cannot reach wordpress.com, so the content is fetched by
 the **WordPress import** GitHub Action (`.github/workflows/wordpress-import.yml`).
 It runs when the importer changes or on demand (Actions → WordPress import → Run
 workflow) and commits `content/wordpress/`, the images and
-`backend/internal/store/migrations/0002_wordpress_import.sql`.
+`backend/internal/store/migrations/0003_wordpress_import.sql`.
 
-Because the seed is also migration 0002, `docker compose up` loads it into local
+Because the seed is also migration 0003, `docker compose up` loads it into local
 Postgres automatically. To do it by hand or on your own machine:
 
 ```sh

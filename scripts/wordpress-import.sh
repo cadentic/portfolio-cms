@@ -3,7 +3,7 @@
 #
 #   scripts/wordpress-import.sh fetch   download posts, pages and images from
 #                                       WordPress.com and regenerate
-#                                       content/wordpress/* and migration 0002
+#                                       content/wordpress/* and migration 0003
 #   scripts/wordpress-import.sh build   regenerate from the saved raw API files
 #   scripts/wordpress-import.sh load    apply content/wordpress/seed.sql to
 #                                       $DATABASE_URL (safe to repeat)

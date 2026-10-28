@@ -1,6 +1,6 @@
 # Pulls csayantan.wordpress.com through the WordPress.com public API and
 # commits the converted content (content/wordpress, images under
-# frontend/public/media/wordpress, backend migration 0002) back to the branch.
+# frontend/public/media/wordpress, backend migration 0003) back to the branch.
 # Runs on demand, and whenever the importer changes.
 name: WordPress import
 
@@ -37,7 +37,7 @@ jobs:
       - name: Commit content
         run: |
           git add content/wordpress frontend/public/media/wordpress
-          [ -f backend/internal/store/migrations/0002_wordpress_import.sql ] && git add backend/internal/store/migrations/0002_wordpress_import.sql
+          [ -f backend/internal/store/migrations/0003_wordpress_import.sql ] && git add backend/internal/store/migrations/0003_wordpress_import.sql
           if git diff --cached --quiet; then echo "No content changes"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
