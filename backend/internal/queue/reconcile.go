@@ -107,6 +107,9 @@ func (w *Worker) reconcile(ctx context.Context, j *Job, ds settings.Delivery) er
 	lctx, cancel := context.WithTimeout(ctx, time.Duration(ds.SendTimeoutSeconds)*time.Second)
 	lr, lerr := adapter.Lookup(lctx, w.Providers.RuntimeConfig(p), j.ID, j.ToEmail, since)
 	cancel()
+	if lerr != nil {
+		w.Log.Warn("reconcile: provider lookup failed", "job_id", j.ID, "provider", p.Name, "err", email.RedactString(lerr.Error()))
+	}
 	if lerr == nil {
 		switch lr.Status {
 		case email.LookupFound:
