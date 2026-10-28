@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -254,6 +255,13 @@ func (s *Server) Token(w http.ResponseWriter, r *http.Request) {
 			UPDATE oauth_codes c SET used_at=COALESCE(c.used_at, now()) FROM old WHERE c.code_hash=old.code_hash
 			RETURNING c.client_id, c.redirect_uri, c.code_challenge, c.uid, c.email, c.expires_at, old.used_at`, tokens.Hash(r.PostForm.Get("code"))).
 			Scan(&cid, &redirect, &challenge, &uid, &mail, &expires, &used)
+		if err == nil && used != nil {
+			// A replayed code suggests it leaked: revoke what it was exchanged for (RFC 6749 4.1.2).
+			if _, rerr := s.DB.Exec(ctx, `UPDATE oauth_tokens SET revoked_at=now() WHERE client_id=$1 AND uid=$2
+				AND created_at >= $3 AND revoked_at IS NULL`, cid, uid, *used); rerr != nil {
+				slog.Error("revoke tokens after code replay", "err", rerr)
+			}
+		}
 		if err != nil || used != nil || time.Now().After(expires) || cid != clientID ||
 			redirect != r.PostForm.Get("redirect_uri") || !pkceOK(r.PostForm.Get("code_verifier"), challenge) {
 			oauthErr(w, 400, "invalid_grant", "invalid, expired or already used authorization code")

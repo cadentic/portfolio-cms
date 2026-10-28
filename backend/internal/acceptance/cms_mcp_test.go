@@ -152,9 +152,17 @@ func TestMCP_OAuthLoginAndCreatePage(t *testing.T) {
 	if r := form(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {clientID}}); r.Status != 400 {
 		t.Fatalf("refresh token reuse accepted: %d", r.Status)
 	}
+	// Replaying an authorization code fails and revokes what it was exchanged for.
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+	if r := form(url.Values{"grant_type": {"authorization_code"}, "code": {cb2.Query().Get("code")}, "client_id": {clientID},
+		"redirect_uri": {authz["redirect_uri"]}, "code_verifier": {verifier}}); r.Status != 400 {
+		t.Fatalf("code replay accepted: %d", r.Status)
+	}
+	if r := e.Do("POST", "/mcp", body, map[string]string{"Authorization": "Bearer " + access}); r.Status != 401 {
+		t.Fatalf("token from a replayed code still works: %d", r.Status)
+	}
 	// The owner can disconnect every MCP client from the admin area.
 	e.Admin("POST", "/api/admin/mcp/revoke-all", nil)
-	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
 	if r := e.Do("POST", "/mcp", body, map[string]string{"Authorization": "Bearer " + access}); r.Status != 401 {
 		t.Fatalf("revoked token still works: %d", r.Status)
 	}

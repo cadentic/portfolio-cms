@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"github.com/cadentic/portfolio-cms/backend/internal/csvsafe"
 	"io"
 	"strconv"
 	"strings"
@@ -384,14 +385,6 @@ func (s *Service) Stats(ctx context.Context) (*Stats, error) {
 	return &st, err
 }
 
-// csvSafe neutralises spreadsheet formula injection.
-func csvSafe(v string) string {
-	if v != "" && strings.ContainsAny(v[:1], "=+-@\t\r") {
-		return "'" + v
-	}
-	return v
-}
-
 // ExportCSV writes subscribers matching f (eligible-only by default).
 func (s *Service) ExportCSV(ctx context.Context, w io.Writer, f Filter) error {
 	where, args := f.where()
@@ -402,7 +395,7 @@ func (s *Service) ExportCSV(ctx context.Context, w io.Writer, f Filter) error {
 		return err
 	}
 	defer rows.Close()
-	cw := csv.NewWriter(w)
+	cw := csvsafe.NewWriter(w)
 	_ = cw.Write([]string{"email", "name", "status", "source", "topics", "subscribed_at", "verified_at", "consent_verified_at", "eligible"})
 	for rows.Next() {
 		var sub Subscriber
@@ -411,7 +404,7 @@ func (s *Service) ExportCSV(ctx context.Context, w io.Writer, f Filter) error {
 			&sub.VerifiedAt, &sub.UnsubscribedAt, &sub.CreatedAt, &sub.UpdatedAt, &sub.Eligible, &consentAt); err != nil {
 			return err
 		}
-		_ = cw.Write([]string{csvSafe(sub.Email), csvSafe(sub.Name), sub.Status, sub.Source, strings.Join(sub.Topics, ";"),
+		_ = cw.Write([]string{sub.Email, sub.Name, sub.Status, sub.Source, strings.Join(sub.Topics, ";"),
 			sub.CreatedAt.UTC().Format(time.RFC3339), fmtTime(sub.VerifiedAt), fmtTime(consentAt), boolStr(sub.Eligible)})
 	}
 	cw.Flush()

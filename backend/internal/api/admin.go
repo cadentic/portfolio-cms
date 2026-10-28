@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/cadentic/portfolio-cms/backend/internal/csvsafe"
 	"net/http"
 	"slices"
 	"strings"
@@ -775,7 +775,7 @@ func (s *Server) exportJobs(w http.ResponseWriter, r *http.Request) {
 	f.Limit = 200
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="delivery-report-%s.csv"`, time.Now().Format("2006-01-02")))
-	cw := csv.NewWriter(w)
+	cw := csvsafe.NewWriter(w)
 	_ = cw.Write([]string{"job_id", "created_at", "category", "kind", "to", "subject", "status", "attempts", "failovers", "provider_message_id", "accepted_at", "delivered_at", "last_error"})
 	for off := 0; off < 100000; off += f.Limit {
 		f.Offset = off

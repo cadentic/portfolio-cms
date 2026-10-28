@@ -6,11 +6,11 @@ package campaigns
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cadentic/portfolio-cms/backend/internal/csvsafe"
 	"html"
 	"io"
 	"slices"
@@ -638,7 +638,7 @@ func (s *Service) ReportCSV(ctx context.Context, id string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cw := csv.NewWriter(w)
+	cw := csvsafe.NewWriter(w)
 	_ = cw.Write([]string{"email", "status", "provider", "attempts", "accepted_at", "delivered_at", "opened_at", "clicked_at", "last_error"})
 	for _, r := range rows {
 		_ = cw.Write([]string{r.Email, r.Status, r.Provider, fmt.Sprint(r.Attempts), ts(r.AcceptedAt), ts(r.DeliveredAt),
