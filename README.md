@@ -26,6 +26,11 @@ docker compose up --build
 | http://localhost:4000/admin | Owner console. Sign in with `owner@cadentic.dev` / `localpass123` (change both in `.env`, see `.env.example`). |
 | http://localhost:8025 | Mock email providers: every "sent" email, buttons to fire delivery/bounce/complaint webhooks, and failure modes per provider. |
 
+The database is PostgreSQL 18, the same major version to pick on Neon. If you
+ran the stack before with PostgreSQL 17, its local data volume can't be reused:
+run `docker compose down -v` once (this deletes local test data only), then
+`docker compose up --build`.
+
 Try the failover: open http://localhost:8025, set Brevo to `error500`,
 subscribe on the homepage, and watch the confirmation arrive through Mailjet.
 The Delivery monitor in the console shows the attempts and the failover reason.

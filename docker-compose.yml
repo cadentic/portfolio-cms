@@ -34,13 +34,15 @@ x-api-env: &api-env
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: portfolio
       POSTGRES_PASSWORD: portfolio
       POSTGRES_DB: portfolio
     ports: ["127.0.0.1:${DB_PORT:-5432}:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    # PostgreSQL 18, matching Neon. The 18+ image keeps data in a versioned
+    # subdirectory, so the volume mounts /var/lib/postgresql (not .../data).
+    volumes: [pgdata:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
       interval: 3s
