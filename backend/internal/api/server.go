@@ -116,7 +116,7 @@ func (s *Server) internal(w http.ResponseWriter, r *http.Request, err error) {
 // proxy hops (Cloudflare / Cloud Run / Container Apps ingress).
 func (s *Server) clientIP(r *http.Request) string {
 	if s.Cfg.TrustedProxyHops > 0 {
-		if h := r.Header.Get("CF-Connecting-IP"); h != "" && net.ParseIP(h) != nil {
+		if h := r.Header.Get("CF-Connecting-IP"); s.Cfg.TrustCloudflareIP && h != "" && net.ParseIP(h) != nil {
 			return h
 		}
 		parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")

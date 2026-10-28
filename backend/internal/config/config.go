@@ -20,6 +20,8 @@ type Config struct {
 	PublicSiteURL    string // Angular site origin, used in email links
 	CORSOrigins      []string
 	TrustedProxyHops int
+	// TrustCloudflareIP honours CF-Connecting-IP; only safe when the origin is reachable through Cloudflare alone.
+	TrustCloudflareIP bool
 
 	AppSecret []byte // HMAC key for unsubscribe/download tokens
 
@@ -57,6 +59,7 @@ func Load() (*Config, error) {
 		PublicSiteURL:        strings.TrimRight(get("PUBLIC_SITE_URL", "http://localhost:4200"), "/"),
 		CORSOrigins:          list(get("CORS_ALLOWED_ORIGINS", "http://localhost:4200")),
 		TrustedProxyHops:     getInt("TRUSTED_PROXY_HOPS", 0),
+		TrustCloudflareIP:    getBool("TRUST_CLOUDFLARE_IP", false),
 		AppSecret:            []byte(os.Getenv("APP_SECRET")),
 		FirebaseProjectID:    os.Getenv("FIREBASE_PROJECT_ID"),
 		FirebaseEmulatorHost: os.Getenv("FIREBASE_AUTH_EMULATOR_HOST"),

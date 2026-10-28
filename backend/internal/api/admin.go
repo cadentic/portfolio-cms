@@ -32,6 +32,7 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/admin/subscribers", s.listSubscribers)
 	m.HandleFunc("POST /api/admin/subscribers", s.createSubscriber)
 	m.HandleFunc("GET /api/admin/subscribers/export.csv", s.exportSubscribers)
+	m.HandleFunc("GET /api/admin/subscribers/stats", s.subscriberStats)
 	m.HandleFunc("POST /api/admin/subscribers/import/preview", s.importPreview)
 	m.HandleFunc("POST /api/admin/subscribers/import/commit", s.importCommit)
 	m.HandleFunc("GET /api/admin/subscribers/{id}", s.getSubscriber)
@@ -167,6 +168,15 @@ func parseFilter(r *http.Request) subscribers.Filter {
 		f.To = &t
 	}
 	return f
+}
+
+func (s *Server) subscriberStats(w http.ResponseWriter, r *http.Request) {
+	st, err := s.Subscribers.Stats(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	writeJSON(w, 200, st)
 }
 
 func (s *Server) listSubscribers(w http.ResponseWriter, r *http.Request) {
