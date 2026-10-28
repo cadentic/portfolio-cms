@@ -22,6 +22,9 @@ type Config struct {
 	TrustedProxyHops int
 	// TrustCloudflareIP honours CF-Connecting-IP; only safe when the origin is reachable through Cloudflare alone.
 	TrustCloudflareIP bool
+	// TrustClientIPHeader takes X-Client-IP from the web tier. Only safe when the
+	// API is reachable solely through that tier (Cloud Run IAM, internal ingress, compose).
+	TrustClientIPHeader bool
 
 	AppSecret []byte // HMAC key for unsubscribe/download tokens
 
@@ -60,6 +63,7 @@ func Load() (*Config, error) {
 		CORSOrigins:          list(get("CORS_ALLOWED_ORIGINS", "http://localhost:4200")),
 		TrustedProxyHops:     getInt("TRUSTED_PROXY_HOPS", 0),
 		TrustCloudflareIP:    getBool("TRUST_CLOUDFLARE_IP", false),
+		TrustClientIPHeader:  getBool("TRUST_CLIENT_IP_HEADER", false),
 		AppSecret:            []byte(os.Getenv("APP_SECRET")),
 		FirebaseProjectID:    os.Getenv("FIREBASE_PROJECT_ID"),
 		FirebaseEmulatorHost: os.Getenv("FIREBASE_AUTH_EMULATOR_HOST"),

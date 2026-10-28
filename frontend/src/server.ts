@@ -87,7 +87,39 @@ app.get('/app-config.json', (_req, res) => {
 // --- API proxy ---------------------------------------------------------------
 
 const hopByHop = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
-  'transfer-encoding', 'upgrade', 'host', 'content-length', 'content-encoding']);
+  'transfer-encoding', 'upgrade', 'host', 'content-length', 'content-encoding',
+  // Set by this server only; never forward a client's own value.
+  'x-client-ip', 'x-serverless-authorization']);
+
+/**
+ * The visitor's IP, for the API's rate limits and consent records.
+ * TRUSTED_PROXY_HOPS counts the load balancers in front of this server
+ * (1 behind Cloud Run or Container Apps ingress, 0 when exposed directly).
+ */
+function clientIp(req: Request): string {
+  if (env['TRUST_CLOUDFLARE_IP'] === 'true' && typeof req.headers['cf-connecting-ip'] === 'string') {
+    return req.headers['cf-connecting-ip'];
+  }
+  const hops = Number(env['TRUSTED_PROXY_HOPS'] ?? 0) || 0;
+  const xff = String(req.headers['x-forwarded-for'] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const chain = [...xff, (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '')];
+  return chain[Math.max(0, chain.length - 1 - hops)] ?? '';
+}
+
+// On Cloud Run the API only accepts calls with a Google identity token for the
+// web service account. It goes in X-Serverless-Authorization so the owner's
+// Firebase token can keep using Authorization.
+const idTokenAudience = env['API_ID_TOKEN_AUDIENCE'] ?? '';
+let idToken = { value: '', expires: 0 };
+async function serverlessAuth(): Promise<string> {
+  if (!idTokenAudience) return '';
+  if (Date.now() < idToken.expires) return idToken.value;
+  const r = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=' +
+    encodeURIComponent(idTokenAudience), { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error('metadata identity token: HTTP ' + r.status);
+  idToken = { value: await r.text(), expires: Date.now() + 45 * 60_000 };
+  return idToken.value;
+}
 
 async function proxy(req: Request, res: Response, next: NextFunction) {
   const headers = new Headers();
@@ -102,10 +134,14 @@ async function proxy(req: Request, res: Response, next: NextFunction) {
   headers.set('x-forwarded-host', req.headers.host ?? '');
   headers.set('x-forwarded-proto', (req.headers['x-forwarded-proto'] as string) || req.protocol);
   headers.set('accept-encoding', 'identity');
+  const ip = clientIp(req);
+  if (ip) headers.set('x-client-ip', ip);
   if (req.headers['content-length']) headers.set('content-length', req.headers['content-length']);
 
   const hasBody = !['GET', 'HEAD'].includes(req.method);
   try {
+    const token = await serverlessAuth();
+    if (token) headers.set('x-serverless-authorization', 'Bearer ' + token);
     const upstream = await fetch(apiOrigin + req.originalUrl, {
       method: req.method,
       headers,

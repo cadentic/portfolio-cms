@@ -115,6 +115,11 @@ func (s *Server) internal(w http.ResponseWriter, r *http.Request, err error) {
 // clientIP honours X-Forwarded-For only for the configured number of trusted
 // proxy hops (Cloudflare / Cloud Run / Container Apps ingress).
 func (s *Server) clientIP(r *http.Request) string {
+	if s.Cfg.TrustClientIPHeader {
+		if h := strings.TrimSpace(r.Header.Get("X-Client-IP")); net.ParseIP(h) != nil {
+			return h
+		}
+	}
 	if s.Cfg.TrustedProxyHops > 0 {
 		if h := r.Header.Get("CF-Connecting-IP"); s.Cfg.TrustCloudflareIP && h != "" && net.ParseIP(h) != nil {
 			return h

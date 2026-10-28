@@ -1,0 +1,16 @@
+# Binds a free managed certificate to one hostname, once.
+- name: Check binding for {{ hostname }}
+  ansible.builtin.command: >
+    az containerapp hostname list -g {{ tf_out.resource_group.value }} -n {{ tf_out.web_app.value }}
+    --query "[?name=='{{ hostname }}'].bindingType | [0]" -o tsv
+  register: binding
+  changed_when: false
+
+- name: Bind managed certificate for {{ hostname }}
+  when: binding.stdout != 'SniEnabled'
+  ansible.builtin.command: >
+    az containerapp hostname bind --hostname {{ hostname }}
+    -g {{ tf_out.resource_group.value }} -n {{ tf_out.web_app.value }}
+    --environment {{ tf_out.environment.value }}
+    --validation-method {{ 'CNAME' if hostname.startswith('www.') else 'HTTP' }}
+  changed_when: true
