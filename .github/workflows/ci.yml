@@ -62,14 +62,32 @@ jobs:
       - uses: actions/checkout@v5
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -recursive infra/terraform
+      - name: shared-variables.tf copies match
+        run: scripts/sync-terraform-vars.sh --check
       - name: terraform validate
         run: |
-          for root in gcp azure; do
-            terraform -chdir=infra/terraform/$root init -backend=false -input=false
+          for root in gcp azure vps dns media-gcs media-azure; do
+            echo "== $root"
+            terraform -chdir=infra/terraform/$root init -backend=false -input=false >/dev/null
             terraform -chdir=infra/terraform/$root validate
           done
-      - run: pipx install ansible-core && ansible-playbook --syntax-check infra/ansible/deploy.yml
-        working-directory: .
+      - name: ansible syntax check
+        run: |
+          pipx install ansible-core
+          for target in gcp azure vps; do
+            ansible-playbook --syntax-check infra/ansible/deploy.yml -e target=$target
+          done
+
+  cloudmigrate:
+    name: Migration tool (unit tests and Postgres 18 / media integration test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tools/cloudmigrate -v
+      - run: tools/cloudmigrate/integration_test.sh
 
   e2e:
     name: Docker stack + browser tests (acceptance criterion 15)
