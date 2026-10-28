@@ -29,6 +29,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
 	"github.com/cadentic/portfolio-cms/backend/internal/queue"
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
+	"github.com/cadentic/portfolio-cms/backend/internal/retention"
 	"github.com/cadentic/portfolio-cms/backend/internal/settings"
 	"github.com/cadentic/portfolio-cms/backend/internal/store"
 	"github.com/cadentic/portfolio-cms/backend/internal/subscribers"
@@ -135,11 +136,15 @@ func run(log *slog.Logger) error {
 					return err
 				}),
 				every(10*time.Minute, func(ctx context.Context) error { return ratelimit.Cleanup(ctx, db) }),
+				every(6*time.Hour, func(ctx context.Context) error {
+					n, err := retention.Purge(ctx, db)
+					log.Info("retention purge", "rows", n)
+					return err
+				}),
 			},
 		}
 		wg.Add(1)
 		go func() { defer wg.Done(); w.Run(ctx) }()
-		log.Info("email worker started", "worker_id", cfg.WorkerID)
 	}
 
 	hs := &http.Server{
