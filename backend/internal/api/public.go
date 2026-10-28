@@ -224,6 +224,13 @@ func (s *Server) contact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many messages; please try again later")
 		return
 	}
+	if word, err := s.checkBlockedWords(r.Context(), name, msg); err != nil {
+		s.internal(w, r, err)
+		return
+	} else if word != "" {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf(blockedWordMsg, word))
+		return
+	}
 	var id string
 	if err := s.DB.QueryRow(r.Context(), `INSERT INTO contact_messages (name, email, message, ip) VALUES ($1,$2,$3,$4) RETURNING id`,
 		name, addr, msg, ipOrNil(ip)).Scan(&id); err != nil {
@@ -235,13 +242,8 @@ func (s *Server) contact(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: "contact_ack:" + id}); err != nil {
 		s.Log.Error("contact ack enqueue", "err", err)
 	}
-	if owner := s.ownerEmail(r); owner != "" {
-		if _, err := s.Mailer.Send(ctx, s.DB, mailer.Request{Template: "contact_notify", To: email.Address{Email: owner},
-			IdempotencyKey: "contact_notify:" + id,
-			Vars:           map[string]string{"sender_name": name, "sender_email": addr, "message": msg}}); err != nil {
-			s.Log.Error("contact notify enqueue", "err", err)
-		}
-	}
+	// The owner is not emailed here: the message waits in the admin until the
+	// owner forwards it to their inbox (see forwardContactMessage).
 	writeJSON(w, http.StatusAccepted, ok)
 }
 

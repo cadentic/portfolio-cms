@@ -101,6 +101,11 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/admin/pages/markdown", s.markdownToBlocks)
 
 	m.HandleFunc("GET /api/admin/contact-messages", s.listContactMessages)
+	m.HandleFunc("POST /api/admin/contact-messages/{id}/forward", s.forwardContactMessage)
+	m.HandleFunc("POST /api/admin/contact-messages/{id}/archive", s.archiveContactMessage)
+	m.HandleFunc("GET /api/admin/contact-blocked-words", s.listBlockedWords)
+	m.HandleFunc("POST /api/admin/contact-blocked-words", s.addBlockedWord)
+	m.HandleFunc("DELETE /api/admin/contact-blocked-words/{id}", s.deleteBlockedWord)
 	m.HandleFunc("GET /api/admin/mcp/connections", s.mcpConnections)
 	m.HandleFunc("POST /api/admin/mcp/revoke-all", s.mcpRevokeAll)
 }
@@ -1062,8 +1067,10 @@ func (s *Server) markdownToBlocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listContactMessages(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.DB.Query(r.Context(), `SELECT id, name, email::text, message, status, created_at FROM contact_messages
-		ORDER BY created_at DESC LIMIT $1 OFFSET $2`, atoiDefault(r.URL.Query().Get("limit"), 50), atoiDefault(r.URL.Query().Get("offset"), 0))
+	q := r.URL.Query()
+	rows, err := s.DB.Query(r.Context(), `SELECT id, name, email::text, message, status, forwarded_at, created_at FROM contact_messages
+		WHERE ($3 = '' OR status = $3) ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		atoiDefault(q.Get("limit"), 50), atoiDefault(q.Get("offset"), 0), q.Get("status"))
 	if err != nil {
 		s.internal(w, r, err)
 		return
@@ -1072,12 +1079,13 @@ func (s *Server) listContactMessages(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
 	for rows.Next() {
 		var id, name, mail, msg, status string
+		var fwd *time.Time
 		var at time.Time
-		if err := rows.Scan(&id, &name, &mail, &msg, &status, &at); err != nil {
+		if err := rows.Scan(&id, &name, &mail, &msg, &status, &fwd, &at); err != nil {
 			s.internal(w, r, err)
 			return
 		}
-		items = append(items, map[string]any{"id": id, "name": name, "email": mail, "message": msg, "status": status, "created_at": at})
+		items = append(items, map[string]any{"id": id, "name": name, "email": mail, "message": msg, "status": status, "forwarded_at": fwd, "created_at": at})
 	}
 	writeJSON(w, 200, map[string]any{"items": items})
 }
