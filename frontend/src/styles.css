@@ -1,7 +1,7 @@
 /* Public site theme (from the approved mockup). Admin styles live in admin.css. */
 :root{
   --bg:#f4f6f8;--surface:#fff;--surface-2:#e9edf1;--ink:#111923;--muted:#596675;
-  --line:#dce2e8;--accent:#8ef0c4;--accent-ink:#09291f;--accent-strong:#16865e;--dark:#10151d;--dark-2:#171f2a;
+  --line:#dce2e8;--accent:#8ef0c4;--accent-ink:#09291f;--accent-strong:#0f6f4d;--dark:#10151d;--dark-2:#171f2a;
   --dark-3:#202b38;--dark-ink:#f4f7fa;--dark-muted:#a6b2bf;--radius:20px;--danger:#b42318;--warn:#8a5a00;
   --shadow:0 16px 48px rgba(20,30,45,.08);--max:1160px
 }
@@ -83,13 +83,14 @@ p{color:var(--muted)}
 .about-grid{display:grid;grid-template-columns:.7fr 1.3fr;gap:64px}
 .about-stamp{background:var(--dark);color:var(--dark-ink);border-radius:var(--radius);padding:26px;min-height:260px;display:flex;flex-direction:column;justify-content:space-between;margin-top:16px}
 .about-stamp .big{font-size:3.4rem;font-weight:850;letter-spacing:-.08em;color:var(--accent);line-height:1.05}
+.about-stamp .kicker,.dark-section .kicker{color:var(--accent)}
 .about-stamp p{color:var(--dark-muted);margin:0}
 .about-copy p{font-size:1.08rem;max-width:720px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;padding:0;list-style:none}
 .chip{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:#3e4a57;background:#fff}
 .dark-section{background:var(--dark);color:var(--dark-ink)}
 .dark-section p{color:var(--dark-muted)}
-.dark-section .eyebrow{color:var(--dark-muted)}
+.dark-section .eyebrow,.contact-card .eyebrow,.about-stamp .eyebrow{color:var(--dark-muted)}
 .experience-grid{display:grid;grid-template-columns:.65fr 1.35fr;gap:65px}
 .timeline{border-left:1px solid #384452;padding-left:28px;margin:0;list-style:none}
 .timeline-item{position:relative;padding:0 0 26px}
@@ -113,7 +114,7 @@ p{color:var(--muted)}
 .client-head .eyebrow{justify-content:center}
 .client-logos{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;list-style:none;padding:0;margin:0}
 .client-logo{min-height:92px;background:#f8fafb;border:1px solid #dce2e7;border-radius:14px;display:grid;place-items:center;text-align:center;padding:14px;color:#394653;font-size:.9rem;font-weight:850;letter-spacing:-.02em}
-.client-logo small{display:block;font-size:.62rem;color:#6b7682;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.client-logo small{display:block;font-size:.62rem;color:#4f5a66;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 .client-note{text-align:center;font-size:.78rem;margin:17px 0 0}
 .blog-band{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .blog-layout{display:grid;grid-template-columns:.8fr 1.2fr;gap:40px;align-items:center}
