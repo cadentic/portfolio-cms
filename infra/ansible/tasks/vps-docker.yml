@@ -1,0 +1,127 @@
+# Prepares a VPS for the stack: Docker Engine with the compose plugin
+# (Debian/Ubuntu or RHEL/AlmaLinux/Rocky/Fedora, unless Docker is already
+# installed), ports 80 and 443 open, and nothing else listening on them.
+- name: Check for Docker with the compose plugin
+  ansible.builtin.command: docker compose version
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Docker (Debian, Ubuntu)
+  when: docker_check.rc != 0 and ansible_facts.os_family == 'Debian'
+  vars:
+    docker_distro: "{{ ansible_facts.distribution | lower }}"
+    deb_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] | default(ansible_facts.architecture) }}"
+  block:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name: [ca-certificates, curl]
+        update_cache: true
+
+    - name: Create the apt keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Add Docker's signing key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/{{ docker_distro }}/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker's apt repository
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: [deb]
+        uris: https://download.docker.com/linux/{{ docker_distro }}
+        suites: ["{{ ansible_facts.distribution_release }}"]
+        components: [stable]
+        architectures: ["{{ deb_arch }}"]
+        signed_by: /etc/apt/keyrings/docker.asc
+        install_python_debian: true
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+        update_cache: true
+
+- name: Install Docker (RHEL, AlmaLinux, Rocky, Fedora)
+  when: docker_check.rc != 0 and ansible_facts.os_family == 'RedHat'
+  vars:
+    docker_distro: "{{ 'fedora' if ansible_facts.distribution == 'Fedora' else 'centos' }}"
+  block:
+    - name: Add Docker's dnf repository
+      ansible.builtin.yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable
+        baseurl: https://download.docker.com/linux/{{ docker_distro }}/$releasever/$basearch/stable
+        gpgcheck: true
+        gpgkey: https://download.docker.com/linux/{{ docker_distro }}/gpg
+
+    - name: Install Docker Engine
+      ansible.builtin.dnf:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+
+- name: Stop on an unsupported system
+  when: docker_check.rc != 0 and ansible_facts.os_family not in ['Debian', 'RedHat']
+  ansible.builtin.fail:
+    msg: >-
+      Install Docker Engine with the compose plugin on this {{ ansible_facts.distribution }} server
+      yourself (https://docs.docker.com/engine/install/), then run the playbook again.
+
+- name: Check that the Docker daemon is running
+  ansible.builtin.command: docker info --format '{{ "{{" }} .ServerVersion {{ "}}" }}'
+  register: docker_daemon
+  changed_when: false
+  failed_when: false
+
+- name: Start Docker now and on boot
+  when: docker_check.rc != 0 or docker_daemon.rc != 0
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Let the SSH user run docker (used by tools/cloudmigrate)
+  when: ansible_user != 'root'
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+
+- name: Find programs listening on ports 80 and 443
+  ansible.builtin.command: ss -Htlnp '( sport = :80 or sport = :443 )'
+  register: listeners
+  changed_when: false
+  failed_when: false # no ss (iproute2): skip the check
+
+- name: Stop if another web server holds ports 80 or 443
+  vars:
+    port_users: "{{ (listeners.stdout_lines | default([])) | reject('search', 'docker-proxy|rootlesskit') | list }}"
+  when: port_users | length > 0
+  ansible.builtin.fail:
+    msg: >-
+      Caddy needs ports 80 and 443, but they are in use: {{ port_users | join('; ') }}.
+      This is usually Apache or nginx from a control panel such as cPanel. Use a plain
+      server image (Ubuntu or AlmaLinux without a control panel), or stop that web server.
+
+- name: Check the firewall
+  ansible.builtin.command: "{{ item }}"
+  loop: ["ufw status", "firewall-cmd --state"]
+  register: firewall
+  changed_when: false
+  failed_when: false
+
+- name: Open ports 80 and 443 (ufw)
+  when: "'Status: active' in firewall.results[0].stdout | default('')"
+  ansible.builtin.command: ufw allow {{ item }}
+  loop: [80/tcp, 443/tcp, 443/udp]
+  register: ufw
+  changed_when: "'Skipping' not in ufw.stdout"
+
+- name: Open ports 80 and 443 (firewalld)
+  when: firewall.results[1].rc == 0 and firewall.results[1].stdout | trim == 'running'
+  ansible.builtin.shell:
+    cmd: firewall-cmd --permanent --add-service=http --add-service=https --add-port=443/udp && firewall-cmd --reload
+  changed_when: true

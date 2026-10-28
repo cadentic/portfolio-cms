@@ -45,7 +45,8 @@ services:
     ports: ["127.0.0.1:${DB_PORT:-5432}:5432"]
     # PostgreSQL 18, matching Neon. The 18+ image keeps data in a versioned
     # subdirectory, so the volume mounts /var/lib/postgresql (not .../data).
-    volumes: [pgdata:/var/lib/postgresql]
+    # The volume has a new name so an old PostgreSQL 17 volume is never reused.
+    volumes: [pgdata18:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
       interval: 3s
@@ -102,4 +103,4 @@ services:
     ports: ["127.0.0.1:4000:4000"]
 
 volumes:
-  pgdata:
+  pgdata18:

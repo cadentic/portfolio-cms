@@ -1,4 +1,6 @@
-# Variables shared by the gcp/ and azure/ roots (each links this file).
+# Variables shared by every root. gcp/, azure/, vps/, dns/, media-gcs/ and
+# media-azure/ each hold an identical copy (a symlink breaks on Windows).
+# Edit this file, then run scripts/sync-terraform-vars.sh (CI checks the copies).
 # Values come from secret.tfvars (git-ignored); see secret.tfvars.example.
 
 variable "domain" {
@@ -24,7 +26,7 @@ variable "web_image" {
 variable "database_url" {
   type        = string
   sensitive   = true
-  description = "Neon Postgres connection string (postgresql://...?sslmode=require). Create the database in the Neon console; the API runs migrations itself."
+  description = "Neon Postgres direct connection string (postgresql://...?sslmode=require, no -pooler in the host). Create the database in the Neon console; the API runs migrations itself."
 }
 
 variable "app_secret" {
@@ -32,8 +34,8 @@ variable "app_secret" {
   sensitive   = true
   description = "At least 32 random characters. Signs subscription and unsubscribe tokens."
   validation {
-    condition     = length(var.app_secret) >= 32
-    error_message = "app_secret must be at least 32 characters."
+    condition     = length(var.app_secret) >= 32 && !startswith(var.app_secret, "REPLACE_")
+    error_message = "app_secret must be at least 32 random characters; replace the example value (e.g. `openssl rand -base64 48`)."
   }
 }
 
@@ -81,6 +83,10 @@ variable "email_brevo_api_key" {
 variable "email_brevo_webhook_secret" {
   type      = string
   sensitive = true
+  validation {
+    condition     = !startswith(var.email_brevo_webhook_secret, "REPLACE_")
+    error_message = "email_brevo_webhook_secret still holds the example value; set a long random string."
+  }
 }
 
 variable "email_mailjet_api_key" {
@@ -96,6 +102,10 @@ variable "email_mailjet_secret_key" {
 variable "email_mailjet_webhook_secret" {
   type      = string
   sensitive = true
+  validation {
+    condition     = !startswith(var.email_mailjet_webhook_secret, "REPLACE_")
+    error_message = "email_mailjet_webhook_secret still holds the example value; set a long random string."
+  }
 }
 
 variable "gtm_id" {
@@ -140,4 +150,109 @@ variable "dmarc_rua" {
   type        = string
   default     = ""
   description = "Mailbox for DMARC aggregate reports, e.g. dmarc@cadentic.dev. Empty disables reports."
+}
+
+# --- media (uploads and the imported WordPress images) ------------------------
+# The bucket is private: visitors get files through the site (/media/...), and
+# only the API's own identity, or a key limited to this one bucket, can read or
+# write it. media-gcs/ and media-azure/ create the bucket; the deploy playbook
+# applies the one media_storage names before the site.
+
+variable "media_storage" {
+  type        = string
+  default     = "local"
+  description = "Where the site keeps media: local (a volume on the server; VPS only), gcs (a Google Cloud Storage bucket) or azure (an Azure Blob container)."
+  validation {
+    condition     = contains(["local", "gcs", "azure"], var.media_storage)
+    error_message = "media_storage must be local, gcs or azure."
+  }
+  validation {
+    condition     = var.media_storage != "gcs" || var.media_gcs_bucket != ""
+    error_message = "media_storage = \"gcs\" needs media_gcs_bucket."
+  }
+  validation {
+    condition     = var.media_storage != "azure" || var.media_azure_account != ""
+    error_message = "media_storage = \"azure\" needs media_azure_account."
+  }
+}
+
+variable "media_access_key" {
+  type        = bool
+  default     = false
+  description = "Create a key limited to the bucket (a service-account key for Google, a container SAS token for Azure) for a site outside the bucket's cloud: a VPS, Azure with a Google bucket, or Cloud Run with an Azure container. Keep it on until a move between clouds is finished."
+}
+
+variable "media_gcs_project_id" {
+  type        = string
+  default     = ""
+  description = "Google Cloud project that holds the bucket. It can differ from gcp_project_id; empty means gcp_project_id."
+}
+
+variable "media_gcs_bucket" {
+  type        = string
+  default     = ""
+  description = "Globally unique bucket name, e.g. cadentic-portfolio-media."
+  validation {
+    condition     = var.media_gcs_bucket == "" || can(regex("^[a-z0-9][a-z0-9_-]{1,61}[a-z0-9]$", var.media_gcs_bucket))
+    error_message = "media_gcs_bucket: 3-63 lowercase letters, digits, - and _ (no dots)."
+  }
+}
+
+variable "media_gcs_location" {
+  type        = string
+  default     = "asia-southeast1"
+  description = "Bucket region. Use the Cloud Run region to avoid transfer charges."
+}
+
+variable "media_azure_subscription_id" {
+  type        = string
+  default     = ""
+  description = "Azure subscription that holds the storage account. It can differ from azure_subscription_id (same Entra tenant); empty means azure_subscription_id."
+}
+
+variable "media_azure_resource_group" {
+  type    = string
+  default = "rg-portfolio-media"
+}
+
+variable "media_azure_location" {
+  type    = string
+  default = "centralindia"
+}
+
+variable "media_azure_account" {
+  type        = string
+  default     = ""
+  description = "Globally unique storage account name, 3-24 lowercase letters and digits, e.g. cadenticmedia."
+  validation {
+    condition     = var.media_azure_account == "" || can(regex("^[a-z0-9]{3,24}$", var.media_azure_account))
+    error_message = "media_azure_account: 3-24 lowercase letters and digits."
+  }
+}
+
+variable "media_azure_container" {
+  type    = string
+  default = "media"
+}
+
+# Set by the deploy playbook from the media root's outputs (media.auto.tfvars.json).
+variable "media_gcs_credentials" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "media_azure_sas" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+locals {
+  # The API's media settings (gcp/, azure/ and vps/ add the key, if any).
+  media_env = merge(
+    { MEDIA_STORAGE = var.media_storage },
+    var.media_storage == "gcs" ? { MEDIA_GCS_BUCKET = var.media_gcs_bucket } : {},
+    var.media_storage == "azure" ? { MEDIA_AZURE_ACCOUNT = var.media_azure_account, MEDIA_AZURE_CONTAINER = var.media_azure_container } : {},
+  )
 }

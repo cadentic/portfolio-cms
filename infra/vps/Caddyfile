@@ -1,0 +1,7 @@
+# Serves the site on the apex domain and www with automatic HTTPS (Let's
+# Encrypt, HTTP-01). The DNS records must point at this server first; the
+# dns/ Terraform root does that when the deploy playbook switches DNS.
+{$DOMAIN}, www.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:4000
+}
