@@ -36,8 +36,6 @@ type Config struct {
 	RunWorker bool
 	WorkerID  string
 
-	MCPTokenSHA256 string // hex sha256 of the MCP bearer token
-
 	ResumeFilePath  string
 	AdminAlertEmail string
 	GTMID           string
@@ -71,7 +69,6 @@ func Load() (*Config, error) {
 		AdminEmails:          lower(list(os.Getenv("ADMIN_EMAILS"))),
 		RunWorker:            getBool("RUN_WORKER", true),
 		WorkerID:             get("WORKER_ID", hostname()),
-		MCPTokenSHA256:       strings.ToLower(os.Getenv("MCP_TOKEN_SHA256")),
 		ResumeFilePath:       os.Getenv("RESUME_FILE_PATH"),
 		AdminAlertEmail:      os.Getenv("ADMIN_ALERT_EMAIL"),
 		GTMID:                os.Getenv("GTM_ID"),

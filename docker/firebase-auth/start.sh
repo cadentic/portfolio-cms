@@ -11,4 +11,6 @@ if [ -n "$LOCAL_ADMIN_EMAIL" ] && [ -n "$LOCAL_ADMIN_PASSWORD" ]; then
     "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=local" >/dev/null 2>&1 \
     && echo "created local owner account $LOCAL_ADMIN_EMAIL" || echo "owner account already exists"
 fi
+# Healthcheck marker: the emulator is up and the owner account exists.
+touch /tmp/ready
 wait $pid

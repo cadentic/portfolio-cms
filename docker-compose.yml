@@ -60,6 +60,10 @@ services:
       LOCAL_ADMIN_EMAIL: ${LOCAL_ADMIN_EMAIL:-owner@cadentic.dev}
       LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-localpass123}
     ports: ["127.0.0.1:9099:9099"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 3s
+      retries: 60
 
   api:
     build: { context: ./backend, target: api }
