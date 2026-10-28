@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,7 @@ type Delivery struct {
 func DefaultEmail() Email {
 	return Email{
 		SenderName:               "Sayantan Chakraborty",
+		SenderEmail:              os.Getenv("EMAIL_FROM_ADDRESS"),
 		OrganizationName:         "Sayantan Chakraborty",
 		PrivacyPolicyURL:         "/privacy",
 		DoubleOptIn:              true,

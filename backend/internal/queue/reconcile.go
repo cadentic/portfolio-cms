@@ -16,10 +16,10 @@ import (
 // reconcileDue leases acceptance_unknown jobs whose reconciliation is due.
 func (w *Worker) reconcileDue(ctx context.Context, ds settings.Delivery) (int, error) {
 	rows, err := w.DB.Query(ctx, `UPDATE email_jobs j SET lease_owner=$1, lease_expires_at=now() + make_interval(secs => $2)
-		FROM (SELECT id FROM email_jobs WHERE status='acceptance_unknown' AND next_attempt_at <= now()
+		FROM (SELECT id AS cid FROM email_jobs WHERE status='acceptance_unknown' AND next_attempt_at <= now()
 		        AND (lease_expires_at IS NULL OR lease_expires_at < now())
 		      ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 10) c
-		WHERE j.id=c.id RETURNING `+prefixed("j.", jobCols), w.ID, ds.LeaseSeconds)
+		WHERE j.id = c.cid RETURNING `+jobCols, w.ID, ds.LeaseSeconds)
 	if err != nil {
 		return 0, err
 	}

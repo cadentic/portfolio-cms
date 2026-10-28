@@ -117,9 +117,9 @@ func (w *Worker) Tick(ctx context.Context) (int, error) {
 func (w *Worker) claim(ctx context.Context, limit, leaseSecs int) ([]*Job, error) {
 	rows, err := w.DB.Query(ctx, `UPDATE email_jobs j SET status='processing', lease_owner=$1,
 		lease_expires_at=now() + make_interval(secs => $2), updated_at=now()
-		FROM (SELECT id FROM email_jobs WHERE status IN ('queued','retry_scheduled') AND next_attempt_at <= now()
+		FROM (SELECT id AS cid FROM email_jobs WHERE status IN ('queued','retry_scheduled') AND next_attempt_at <= now()
 		      ORDER BY priority DESC, next_attempt_at FOR UPDATE SKIP LOCKED LIMIT $3) c
-		WHERE j.id = c.id RETURNING `+prefixed("j.", jobCols), w.ID, leaseSecs, limit)
+		WHERE j.id = c.cid RETURNING `+jobCols, w.ID, leaseSecs, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -560,19 +560,6 @@ func (w *Worker) deadLetter(ctx context.Context, j *Job, cycle int, reason strin
 		lease_owner=NULL, lease_expires_at=NULL, updated_at=now()
 		WHERE id=$1 AND lease_owner=$2 AND status='processing'`, j.ID, w.ID, cycle, truncate(reason, 1000))
 	return err
-}
-
-func prefixed(p, cols string) string {
-	parts := strings.Split(cols, ",")
-	for i, c := range parts {
-		c = strings.TrimSpace(c)
-		if strings.HasPrefix(c, "coalesce(") {
-			parts[i] = "coalesce(" + p + strings.TrimPrefix(c, "coalesce(")
-		} else {
-			parts[i] = p + c
-		}
-	}
-	return strings.Join(parts, ", ")
 }
 
 func truncate(s string, n int) string {

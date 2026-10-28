@@ -175,7 +175,7 @@ func (r *Repo) Chain(ctx context.Context, stream string) ([]*Provider, error) {
 	}
 	var out []*Provider
 	for _, p := range all {
-		if p.Enabled && p.Handles(stream) {
+		if p.Enabled && p.CredentialsConfigured && p.Handles(stream) {
 			if _, ok := r.Registry.Get(p.Kind); ok {
 				out = append(out, p)
 			}
