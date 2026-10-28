@@ -53,9 +53,10 @@ type FirebaseVerifier struct {
 	Client    *http.Client
 	JWKSURL   string
 
-	mu      sync.Mutex
-	keys    map[string]*rsa.PublicKey
-	expires time.Time
+	mu        sync.Mutex
+	keys      map[string]*rsa.PublicKey
+	expires   time.Time
+	fetchedAt time.Time
 }
 
 type claims struct {
@@ -101,6 +102,11 @@ func (v *FirebaseVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey,
 	if k, ok := v.keys[kid]; ok && time.Now().Before(v.expires) {
 		return k, nil
 	}
+	// Unknown key ids only trigger a refetch once a minute, so forged tokens
+	// cannot turn every request into a call to Google.
+	if v.keys != nil && time.Now().Before(v.expires) && time.Since(v.fetchedAt) < time.Minute {
+		return nil, errors.New("unknown key id")
+	}
 	url := v.JWKSURL
 	if url == "" {
 		url = jwksURL
@@ -141,7 +147,7 @@ func (v *FirebaseVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey,
 			maxAge = time.Duration(secs) * time.Second
 		}
 	}
-	v.keys, v.expires = keys, time.Now().Add(maxAge)
+	v.keys, v.expires, v.fetchedAt = keys, time.Now().Add(maxAge), time.Now()
 	k, ok := keys[kid]
 	if !ok {
 		return nil, errors.New("unknown key id")

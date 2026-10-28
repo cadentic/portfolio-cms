@@ -253,7 +253,6 @@ func normalizeBlocks(in []Block) ([]Block, error) {
 			nb.Text, nb.Cite = clip(b.Text, 4000), clip(b.Cite, 200)
 		case "code":
 			nb.Text, nb.Language = clip(b.Text, 40000), clip(b.Language, 30)
-			nb.Text = b.Text
 		case "callout":
 			nb.Text, nb.Tone = clip(b.Text, 4000), "info"
 			if b.Tone == "warning" || b.Tone == "success" {

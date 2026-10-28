@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -181,14 +182,15 @@ func New(t *testing.T) *Env {
 	s := func(v string) *string { return &v }
 	bp := func(v bool) *bool { return &v }
 	ip := func(v int) *int { return &v }
+	fast := 1000.0 // the local token bucket is covered separately
 	bv, err := provs.Create(ctx, providers.Input{Name: s("Brevo"), Kind: s("brevo"), Enabled: bp(true), Priority: ip(10),
-		CredentialRefs: map[string]string{"api_key": "EMAIL_BREVO_API_KEY"}, WebhookSecretRef: s("EMAIL_BREVO_WEBHOOK_SECRET"), MaxAttempts: ip(2)})
+		CredentialRefs: map[string]string{"api_key": "EMAIL_BREVO_API_KEY"}, WebhookSecretRef: s("EMAIL_BREVO_WEBHOOK_SECRET"), MaxAttempts: ip(2), RateLimitPerSecond: &fast})
 	if err != nil {
 		t.Fatalf("create brevo: %v", err)
 	}
 	mj, err := provs.Create(ctx, providers.Input{Name: s("Mailjet"), Kind: s("mailjet"), Enabled: bp(true), Priority: ip(20),
 		CredentialRefs:   map[string]string{"api_key": "EMAIL_MAILJET_API_KEY", "secret_key": "EMAIL_MAILJET_SECRET_KEY"},
-		WebhookSecretRef: s("EMAIL_MAILJET_WEBHOOK_SECRET"), MaxAttempts: ip(2)})
+		WebhookSecretRef: s("EMAIL_MAILJET_WEBHOOK_SECRET"), MaxAttempts: ip(2), RateLimitPerSecond: &fast})
 	if err != nil {
 		t.Fatalf("create mailjet: %v", err)
 	}
@@ -266,7 +268,7 @@ func (e *Env) JobStatus(to string) string {
 }
 
 func (e *Env) JobID(to string) string {
-	return e.Str(`SELECT id::text FROM email_jobs WHERE to_email=$1 ORDER BY created_at DESC LIMIT 1`, to)
+	return e.Str(`SELECT id::text FROM email_jobs WHERE to_email=$1 AND provider_message_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, to)
 }
 
 // Enqueue puts a transactional message straight on the queue.
@@ -330,6 +332,18 @@ func (e *Env) Admin(method, path string, body any) Response {
 	return e.Do(method, path, body, map[string]string{"Authorization": "Bearer " + EmulatorToken("owner-uid", AdminEmail)})
 }
 
+// AdminUpload posts a multipart file as the site owner.
+func (e *Env) AdminUpload(path, field, filename string, data []byte) Response {
+	e.T.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile(field, filename)
+	_, _ = fw.Write(data)
+	_ = mw.Close()
+	return e.Do("POST", path, buf.Bytes(), map[string]string{"Content-Type": mw.FormDataContentType(),
+		"Authorization": "Bearer " + EmulatorToken("owner-uid", AdminEmail)})
+}
+
 // EmulatorToken builds an unsigned Firebase Auth Emulator ID token.
 func EmulatorToken(uid, mail string) string {
 	enc := func(v any) string {
@@ -366,13 +380,14 @@ func (e *Env) ConfirmToken(to string) string {
 func (e *Env) Subscribe(addr string, topics ...string) string {
 	e.T.Helper()
 	r := e.Do("POST", "/api/public/subscribe", map[string]any{"email": addr, "name": "Reader", "consent": true, "topics": topics}, nil)
-	if r.Status != 200 {
+	if r.Status != 202 {
 		e.T.Fatalf("subscribe %s: %d %s", addr, r.Status, r.Body)
 	}
 	tok := e.ConfirmToken(addr)
 	if r := e.Do("POST", "/api/public/subscribe/confirm", map[string]string{"token": tok}, nil); r.Status != 200 {
 		e.T.Fatalf("confirm %s: %d %s", addr, r.Status, r.Body)
 	}
+	e.Drain(5) // welcome email
 	return e.Str(`SELECT id::text FROM subscribers WHERE email=$1`, addr)
 }
 
