@@ -1,0 +1,78 @@
+/** Owner profile, from the published resume. Phone number and personal email are deliberately omitted. */
+export const PROFILE = {
+  name: 'Sayantan Chakraborty',
+  initials: 'SC',
+  role: 'Oracle Database Administrator · Database Reliability Engineer',
+  shortRole: 'Oracle DBA & Database Reliability Engineer',
+  location: 'Bangalore, India',
+  photo: '/images/sayantan.jpg',
+  summary:
+    'Oracle Database Administrator and Database Reliability Engineer with 11+ years of experience delivering high-availability ' +
+    'solutions for enterprise, government and healthcare sectors, with deep experience in migration, patching and disaster ' +
+    'recovery architecture.',
+  linkedin: 'https://www.linkedin.com/in/sayantan-chakraborty-y2022',
+  github: 'https://github.com/ust-sayantan',
+  youtube: 'https://www.youtube.com/@csayantan',
+  youtubeHandle: '@csayantan',
+  metrics: [
+    { value: '11+ years', label: 'Oracle, RAC, Data Guard and EBS in production' },
+    { value: '125 TB', label: '456 databases across 180 servers' },
+    { value: '99.9%+', label: 'availability in 24x7 operations' },
+  ],
+  skills: ['Oracle 9i–19c', 'Oracle RAC', 'Data Guard', 'RMAN', 'ASM', 'GoldenGate', 'OEM 13c', 'AWR / ASH', 'Data Pump',
+    'Oracle EBS 11i / R12', 'PostgreSQL & Patroni', 'Ansible', 'Terraform', 'Docker', 'AWS', 'Google Cloud'],
+  achievements: [
+    { title: 'Large-estate operations', text: 'Directed production infrastructure managing over 125 TB of data across 456 databases and 180 servers.', tag: 'Scale' },
+    { title: '250+ Oracle patches', text: 'Executed CPU/PSU and EBS patching across clustered environments spanning Oracle 10g to 19c.', tag: 'Patching' },
+    { title: 'Downtime cut by 35%', text: 'RMAN backup/recovery improvements and operational optimisation reduced downtime by 35%.', tag: 'Recovery' },
+    { title: 'DR objectives met', text: 'Enforced RTO under 4 hours and RPO under 1 hour across 20+ production systems.', tag: 'Disaster recovery' },
+    { title: 'Critical incidents resolved', text: 'Resolved 15+ critical production incidents involving HA configurations and database performance.', tag: 'Incident response' },
+    { title: 'Automated database builds', text: 'Standardised framework provisioning production-ready databases on VMs in under 30 minutes.', tag: 'Automation' },
+  ],
+  expertise: [
+    { title: 'High availability & DR', text: 'RAC, Data Guard and GoldenGate designs with tested DR drills and clear RTO/RPO targets.', chips: ['RAC', 'Data Guard', 'GoldenGate', 'DR drills'] },
+    { title: 'Performance & operations', text: 'AWR/ASH analysis, SQL tuning, capacity planning and calm 24x7 incident response.', chips: ['AWR', 'ASH', 'SQL tuning', 'OEM 13c'] },
+    { title: 'Automation & cloud', text: 'Infrastructure as code and repeatable builds across on-premises, AWS and Google Cloud.', chips: ['Ansible', 'Terraform', 'Docker', 'AWS / GCP'] },
+  ],
+  experience: [
+    { period: 'Apr 2025 – Jan 2026', title: 'Lead II, Cloud Infrastructure Services', org: 'UST (US Technology International), Bangalore',
+      points: ['Directed Equifax production infrastructure across databases, servers and VMs.',
+        'Resolved critical incidents across Oracle 11g/12c/19c, GoldenGate XAG and OEM 13c with sub-second replication SLAs.',
+        'Mentored junior DBAs and coordinated vulnerability management with zero unplanned downtime.'] },
+    { period: 'Apr 2024 – Apr 2025', title: 'Senior Subject-Matter Expert', org: 'Ndedge Informatics, Kolkata',
+      points: ['Migrated production servers from Oracle Linux 7.9 to 8.2 hosting Oracle 19c.',
+        'Quarterly CPU/PSU patching across HA environments with zero unplanned downtime.'] },
+    { period: 'Aug 2023 – Mar 2024', title: 'Senior Project Scientist', org: 'Indian Institute of Technology Delhi',
+      points: ['Containerised Linux infrastructure for 10+ research projects with 99.9% uptime.',
+        'PostgreSQL 15/16 with etcd and Patroni; automated database builds in under 30 minutes.'] },
+    { period: 'Oct 2018 – Mar 2023', title: 'Principal Consultant, Infrastructure Systems', org: 'Ndedge Informatics, Kolkata',
+      points: ['Owned 15+ critical healthcare and manufacturing systems; led a team of 4 DBAs.',
+        'Migrations with 35% efficiency gains; Terraform IaC on GCP and AWS.'] },
+  ],
+  earlierExperience: [
+    { period: 'Apr – Aug 2023', title: 'Project Consultant', org: 'NIEPA, Delhi' },
+    { period: 'May – Jul 2017', title: 'Oracle EBS Consultant', org: 'Wizertech Informatics, Kolkata' },
+    { period: 'Sep 2016 – Feb 2017', title: 'Oracle Database Administrator', org: 'Magna Infotech, Kolkata' },
+    { period: 'Jun – Aug 2016', title: 'Software Engineer', org: 'Skilliantech India, Kolkata' },
+    { period: 'Jun – Nov 2015', title: 'DBA', org: 'Collebra Technologies, Kolkata' },
+    { period: 'Jul 2013 – Jul 2014', title: 'Assistant Officer', org: 'BIL Infratech, Kolkata' },
+    { period: 'Dec 2012 – Jul 2013', title: 'EBS Consultant', org: 'CSA Consulting, Kolkata' },
+    { period: '2010 – 2012', title: 'Early roles in Oracle EBS, Linux and DBA work', org: 'Kolkata' },
+  ],
+  organizations: [
+    { name: 'UST', note: 'Employer' }, { name: 'Equifax', note: 'Client engagement' }, { name: 'IIT Delhi', note: 'Employer' },
+    { name: 'Ndedge Informatics', note: 'Employer' }, { name: 'NIEPA', note: 'Project engagement' },
+  ],
+  education: [
+    { degree: 'Master of Computer Applications (MCA)', school: 'MAKAUT', years: '2006 – 2009' },
+    { degree: 'B.Sc', school: 'University of Calcutta', years: '2001 – 2006' },
+  ],
+  languages: ['English', 'Bengali', 'Hindi'],
+  faq: [
+    { q: 'What does Sayantan Chakraborty specialise in?', a: 'Oracle database administration and database reliability engineering: Oracle RAC, Data Guard, GoldenGate, RMAN, Oracle EBS, performance tuning and disaster recovery, plus automation with Ansible and Terraform.' },
+    { q: 'How many years of experience does he have?', a: 'More than 11 years running production Oracle databases for enterprise, government and healthcare organisations, including estates of 125 TB, 456 databases and 180 servers.' },
+    { q: 'Where is he based?', a: 'Bangalore, India. He works with teams remotely as well.' },
+    { q: 'How can I get his resume?', a: 'Use "Verify email to get resume" on this site. A one-time code is emailed to you, and the PDF downloads once the code is verified.' },
+    { q: 'Where can I watch his videos?', a: 'On YouTube at @csayantan, where he publishes Oracle DBA and database reliability walkthroughs.' },
+  ],
+};

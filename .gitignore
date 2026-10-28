@@ -1,0 +1,18 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.tfvars
+!*.tfvars.example
+secret.tfvars
+**/.terraform/
+*.tfstate
+*.tfstate.*
+# build
+node_modules/
+dist/
+.angular/
+coverage/
+backend/bin/
+*.log
+.DS_Store

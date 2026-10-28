@@ -1,0 +1,12 @@
+{
+  "name": "portfolio-cms-e2e",
+  "private": true,
+  "description": "Browser tests for acceptance criterion 15 (accessibility, mobile, CMS usability). Run against `docker compose up`.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
+    "@playwright/test": "1.63.0"
+  }
+}

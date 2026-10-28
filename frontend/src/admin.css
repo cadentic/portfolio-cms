@@ -1,0 +1,91 @@
+/* Admin theme (owner dashboard design). Scoped under .admin so it never affects the public site. */
+.admin{--a-bg:#0b1118;--a-panel:#0f1720;--a-panel-2:#131d28;--a-line:#1f2b38;--a-ink:#e8eef4;--a-muted:#8b9aab;
+  --a-accent:#5fe0b0;--a-accent-ink:#06261b;--a-warn:#f5b84b;--a-danger:#f2706b;--a-info:#6cb8ff;
+  min-height:100vh;background:var(--a-bg);color:var(--a-ink);display:grid;grid-template-columns:250px 1fr;font-size:14px}
+.admin a{color:inherit}
+.admin p{color:var(--a-muted)}
+.admin h1{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 4px}
+.admin h2{font-size:1.15rem;letter-spacing:-.01em;margin:0 0 4px}
+.admin h3{font-size:.95rem;letter-spacing:0;margin:0 0 8px}
+.a-side{background:var(--a-panel);border-right:1px solid var(--a-line);padding:18px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;overflow:auto}
+.a-logo{display:flex;align-items:center;gap:10px;font-size:1.15rem;font-weight:700;padding:4px 8px 18px;color:var(--a-ink)}
+.a-logo b{color:var(--a-accent);font-family:ui-monospace,monospace}
+.a-nav a,.a-nav button{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:#c7d2dd;border:0;background:none;width:100%;text-align:left;cursor:pointer;font-size:.9rem}
+.a-nav a:hover{background:#16212d}
+.a-nav a.active{background:#12312a;color:var(--a-accent);box-shadow:inset 3px 0 0 var(--a-accent)}
+.a-nav .sub{padding-left:34px;font-size:.85rem}
+.a-nav .group{color:var(--a-muted);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;padding:14px 12px 4px}
+.a-status{margin-top:auto;border:1px solid var(--a-line);border-radius:10px;padding:10px 12px;font-size:.78rem;color:var(--a-muted)}
+.a-status .ok{color:var(--a-accent)}
+.a-main{min-width:0;display:flex;flex-direction:column}
+.a-top{height:56px;border-bottom:1px solid var(--a-line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:var(--a-panel);position:sticky;top:0;z-index:10}
+.a-top .who{display:flex;align-items:center;gap:12px;font-size:.85rem}
+.a-bell{position:relative;background:none;border:0;color:var(--a-ink);cursor:pointer;font-size:1.1rem}
+.a-bell span{position:absolute;top:-6px;right:-8px;background:var(--a-accent);color:var(--a-accent-ink);border-radius:999px;font-size:.65rem;padding:1px 5px;font-weight:800}
+.a-content{padding:24px 28px 60px}
+.a-tabs{display:flex;gap:4px;border-bottom:1px solid var(--a-line);margin:18px 0 18px;overflow-x:auto}
+.a-tabs a{padding:10px 16px;color:#c7d2dd;border-bottom:2px solid transparent;white-space:nowrap}
+.a-tabs a.active{color:var(--a-accent);border-bottom-color:var(--a-accent)}
+.a-grid{display:grid;gap:14px}
+.a-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:16px}
+.a-card{background:var(--a-panel);border:1px solid var(--a-line);border-radius:12px;padding:16px}
+.a-stat .label{color:var(--a-muted);font-size:.8rem}
+.a-stat .value{font-size:1.6rem;font-weight:700;margin:4px 0}
+.a-stat .sub{font-size:.75rem;color:var(--a-muted)}
+.a-stat .up{color:var(--a-accent)}
+.a-split{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.a-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.a-row.between{justify-content:space-between}
+.a-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.admin label.f{display:grid;gap:4px;font-size:.75rem;color:var(--a-muted)}
+.admin input,.admin select,.admin textarea{background:var(--a-panel-2);border:1px solid var(--a-line);color:var(--a-ink);border-radius:8px;padding:8px 10px;font:inherit;font-size:.88rem;min-height:36px;width:100%}
+.admin textarea{min-height:120px;font-family:inherit}
+.admin textarea.code{font-family:ui-monospace,monospace;font-size:.8rem}
+.admin input[type=checkbox]{width:16px;height:16px;min-height:0;accent-color:var(--a-accent)}
+.ab{display:inline-flex;align-items:center;gap:6px;border-radius:8px;padding:8px 14px;border:1px solid var(--a-line);background:#16212d;color:var(--a-ink);cursor:pointer;font-weight:600;font-size:.85rem;white-space:nowrap}
+.ab:hover{border-color:#2d3d4f}
+.ab:disabled{opacity:.5;cursor:not-allowed}
+.ab.primary{background:var(--a-accent);border-color:var(--a-accent);color:var(--a-accent-ink)}
+.ab.danger{background:#3a1717;border-color:#5e2422;color:#ffb4b0}
+.ab.sm{padding:4px 10px;font-size:.78rem}
+.a-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.a-table th{text-align:left;color:var(--a-muted);font-weight:600;padding:10px;border-bottom:1px solid var(--a-line);white-space:nowrap}
+.a-table td{padding:10px;border-bottom:1px solid #16212d;vertical-align:middle}
+.a-table tr.sel td{background:#122019}
+.a-table tr:hover td{background:#111b25}
+.a-table-wrap{overflow-x:auto;border:1px solid var(--a-line);border-radius:10px}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.pill.ok,.pill.verified,.pill.accepted,.pill.delivered,.pill.sent,.pill.published,.pill.closed,.pill.healthy{background:#12312a;color:var(--a-accent)}
+.pill.pending,.pill.queued,.pill.retry_scheduled,.pill.processing,.pill.draft,.pill.scheduled,.pill.sending,.pill.deferred,.pill.half_open{background:#3a2c10;color:var(--a-warn)}
+.pill.unsubscribed,.pill.bounced,.pill.complained,.pill.failed,.pill.dead_letter,.pill.cancelled,.pill.open,.pill.critical,.pill.erased{background:#3a1717;color:var(--a-danger)}
+.pill.acceptance_unknown,.pill.warning,.pill.info{background:#122a40;color:var(--a-info)}
+.a-pager{display:flex;gap:6px;align-items:center;justify-content:space-between;margin-top:12px;color:var(--a-muted);font-size:.8rem}
+.a-kv{display:grid;grid-template-columns:130px 1fr;gap:6px 10px;font-size:.84rem}
+.a-kv dt{color:var(--a-muted)}
+.a-kv dd{margin:0;word-break:break-word}
+.a-section{border-top:1px solid var(--a-line);padding-top:12px;margin-top:12px}
+.a-err{background:#3a1717;border:1px solid #5e2422;color:#ffb4b0;border-radius:8px;padding:10px 12px;font-size:.85rem}
+.a-ok{background:#12312a;border:1px solid #1d4d40;color:#a9f0d3;border-radius:8px;padding:10px 12px;font-size:.85rem}
+.a-warn{background:#3a2c10;border:1px solid #5a4416;color:#ffd998;border-radius:8px;padding:10px 12px;font-size:.85rem}
+.a-modal-bg{position:fixed;inset:0;background:#000a;z-index:50;display:grid;place-items:center;padding:16px}
+.a-modal{background:var(--a-panel);border:1px solid var(--a-line);border-radius:14px;padding:20px;width:min(640px,100%);max-height:calc(100vh - 32px);overflow:auto}
+.a-modal.wide{width:min(980px,100%)}
+.a-form{display:grid;gap:12px}
+.a-form .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.a-preview{background:#fff;border-radius:10px;width:100%;min-height:480px;border:0}
+.a-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:.84rem}
+.a-list li{display:flex;justify-content:space-between;gap:10px}
+.a-muted{color:var(--a-muted)}
+.a-mono{font-family:ui-monospace,monospace;font-size:.8rem}
+.a-block{border:1px solid var(--a-line);border-radius:10px;padding:12px;background:var(--a-panel-2);display:grid;gap:8px}
+.a-block-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.a-login{min-height:100vh;display:grid;place-items:center;background:var(--a-bg);color:var(--a-ink);padding:16px}
+.a-login .a-card{width:min(420px,100%);padding:28px}
+.a-hero-pick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.a-hero-pick label{position:relative;border:1px solid var(--a-line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:.82rem}
+.a-hero-pick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;min-height:0;margin:0;cursor:pointer}
+.a-hero-pick label.on{border-color:var(--a-accent);background:#12312a;color:var(--a-accent)}
+@media(max-width:1200px){.a-stats{grid-template-columns:repeat(3,1fr)}.a-split{grid-template-columns:1fr}}
+@media(max-width:820px){.admin{grid-template-columns:1fr}.a-side{position:static;height:auto}.a-filters{grid-template-columns:1fr 1fr}.a-stats{grid-template-columns:1fr 1fr}.a-content{padding:16px}.a-form .two{grid-template-columns:1fr}}
+body:has(.admin){background:#0b1118}
+.a-hero-pick label:has(input:focus-visible){outline:2px solid var(--a-accent);outline-offset:2px}
