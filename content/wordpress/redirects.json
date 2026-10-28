@@ -1,0 +1,42 @@
+[
+  {
+    "from": "/2009",
+    "to": "/blog",
+    "status": 301
+  },
+  {
+    "from": "/2009/04",
+    "to": "/blog",
+    "status": 301
+  },
+  {
+    "from": "/2009/04/28",
+    "to": "/blog",
+    "status": 301
+  },
+  {
+    "from": "/2009/04/28/hello-world",
+    "to": "/blog/hello-world",
+    "status": 301
+  },
+  {
+    "from": "/category/linux-securiyty",
+    "to": "/blog?category=Linux+Securiyty",
+    "status": 301
+  },
+  {
+    "from": "/category/open-cv",
+    "to": "/blog?category=Open+cv",
+    "status": 301
+  },
+  {
+    "from": "/category/oracle-database-talk",
+    "to": "/blog?category=Oracle+Database+Talk",
+    "status": 301
+  },
+  {
+    "from": "/feed",
+    "to": "/blog",
+    "status": 301
+  }
+]
