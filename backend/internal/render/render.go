@@ -20,6 +20,7 @@ var policy = func() *bluemonday.Policy {
 	p.AllowAttrs("style").Globally()
 	p.AllowAttrs("align", "width", "height", "bgcolor", "cellpadding", "cellspacing", "border").Globally()
 	p.AllowElements("table", "thead", "tbody", "tr", "td", "th", "center", "span", "div", "img", "hr")
+	p.AllowAttrs("loading").Matching(regexp.MustCompile(`^(lazy|eager)$`)).OnElements("img")
 	p.AllowURLSchemes("https", "http", "mailto")
 	p.RequireNoFollowOnLinks(false)
 	return p
