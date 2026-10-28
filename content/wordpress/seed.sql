@@ -1176,7 +1176,7 @@ WHERE cms_pages.status = 'draft' AND cms_pages.updated_at = cms_pages.created_at
 INSERT INTO cms_pages (id, kind, menu_order, slug, title, excerpt, hero, blocks,
   featured_image_url, author_name, categories, tags, seo, status, published_at,
   first_published_at, source, source_id, created_at, updated_at)
-SELECT gen_random_uuid(), 'page', 0, 'participation-certificates', 'Participation Certificates', 'Resume', '{"type":"none"}'::jsonb, '[{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/ocp.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/eva.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/ibm.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/sun.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/vmware.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"https://i0.wp.com/imageshack.us/photo/my-images/62/vmwares.jpg/\" alt=\"Certificates\" loading=\"lazy\"></figure>"},{"type":"html","html":"<p><a href=\"/media/wordpress/2011/06/resume.pdf\">Resume</a></p>"}]'::jsonb,
+SELECT gen_random_uuid(), 'page', 0, 'participation-certificates', 'Participation Certificates', 'Resume', '{"type":"none"}'::jsonb, '[{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/ocp.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/eva.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/ibm.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/sun.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"/media/wordpress/2011/06/vmware.jpg\" alt=\"\" loading=\"lazy\"></figure>"},{"type":"html","html":"<figure><img src=\"https://i0.wp.com/imageshack.us/photo/my-images/62/vmwares.jpg/\" alt=\"Certificates\" loading=\"lazy\"></figure>"},{"type":"html","html":"<p><a href=\"https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf\">Resume</a></p>"}]'::jsonb,
   NULL, 'csayantan', '{}'::text[], '{}'::text[], '{"title":"Participation Certificates","description":"Resume","canonical":"https://cadentic.dev/about/participation-certificates","noindex":false}'::jsonb, 'draft', NULL,
   '2011-06-08T11:33:10Z'::timestamptz, 'wordpress', '410', now(), now()
 WHERE NOT EXISTS (
@@ -1809,13 +1809,9 @@ UPDATE cms_pages c SET parent_id = par.id FROM cms_pages par
 WHERE c.source = 'wordpress' AND c.source_id = '534' AND c.parent_id IS NULL
   AND par.source = 'wordpress' AND par.source_id = '165';
 
--- Media library (18 files under frontend/public/media/wordpress).
+-- Media library (16 files under frontend/public/media/wordpress).
 INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)
 VALUES (gen_random_uuid(), '/media/wordpress/2009/04/alu.jpg', 'image', 'sayantan chakraborty', '', 366, 461, 'wordpress', '2009/04/alu.jpg', 'https://csayantan.wordpress.com/wp-content/uploads/2009/04/alu.jpg', now())
-ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
-  url = EXCLUDED.url, width = COALESCE(cms_media.width, EXCLUDED.width), height = COALESCE(cms_media.height, EXCLUDED.height);
-INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)
-VALUES (gen_random_uuid(), '/media/wordpress/2009/04/resume_s1-chakraborty2.pdf', 'file', '', '', NULL, NULL, 'wordpress', '2009/04/resume_s1-chakraborty2.pdf', 'https://csayantan.wordpress.com/wp-content/uploads/2009/04/resume_s1-chakraborty2.pdf', now())
 ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
   url = EXCLUDED.url, width = COALESCE(cms_media.width, EXCLUDED.width), height = COALESCE(cms_media.height, EXCLUDED.height);
 INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)
@@ -1844,10 +1840,6 @@ ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
   url = EXCLUDED.url, width = COALESCE(cms_media.width, EXCLUDED.width), height = COALESCE(cms_media.height, EXCLUDED.height);
 INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)
 VALUES (gen_random_uuid(), '/media/wordpress/2011/06/ocp.jpg', 'image', '', '', 2480, 3507, 'wordpress', '2011/06/ocp.jpg', 'https://csayantan.wordpress.com/wp-content/uploads/2011/06/ocp.jpg', now())
-ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
-  url = EXCLUDED.url, width = COALESCE(cms_media.width, EXCLUDED.width), height = COALESCE(cms_media.height, EXCLUDED.height);
-INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)
-VALUES (gen_random_uuid(), '/media/wordpress/2011/06/resume.pdf', 'file', '', '', NULL, NULL, 'wordpress', '2011/06/resume.pdf', 'https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf', now())
 ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
   url = EXCLUDED.url, width = COALESCE(cms_media.width, EXCLUDED.width), height = COALESCE(cms_media.height, EXCLUDED.height);
 INSERT INTO cms_media (id, url, kind, alt, caption, width, height, source, source_id, source_url, created_at)

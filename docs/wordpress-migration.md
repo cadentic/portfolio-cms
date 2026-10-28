@@ -38,7 +38,23 @@ through the WordPress.com public REST API and loads it into the CMS tables
 | links to other old pages | rewritten to the new path |
 | SEO | `seo.title`, `seo.description` (first 160 chars of the excerpt), `seo.canonical = https://cadentic.dev{path}` |
 
-Comments are not imported.
+Only images are copied. Other attachments (the two old resume PDFs) keep their
+wordpress.com URL, so nothing with personal contact details lands in the public
+`frontend/public/media` folder. Comments are not imported.
+
+The old blog had no real code formatting: commands, SQL and output sat in
+blockquotes, and subheadings were bold paragraphs. Those become `code` blocks
+(language guessed as `sql`, `bash` or `plaintext`) and level-3 `heading` blocks.
+
+## What was imported (28 Oct 2026)
+
+- 1 post (`/blog/hello-world`, titled "About") and 82 pages, 71 of them nested
+  under a parent page. Page paths are unchanged.
+- 16 images (certificates, Teradata and screenshot images).
+- 5 pages are empty on WordPress too (section index pages such as `/storage`);
+  they are imported as empty drafts.
+- `/about` ("Details") is an old resume with a home address, personal emails
+  and phone numbers. Review or delete it before publishing anything there.
 
 ## Redirects (301)
 

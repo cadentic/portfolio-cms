@@ -187,3 +187,15 @@ func TestBoldParagraphBecomesHeading(t *testing.T) {
 		t.Fatalf("paragraph = %+v", b[1])
 	}
 }
+
+func TestDocumentsAreNotCopied(t *testing.T) {
+	posts := []wpPost{{ID: 1, Type: "page", Slug: "about", Status: "publish", URL: "https://csayantan.wordpress.com/about/",
+		Content: `<p><a href="https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf">resume</a></p>`}}
+	s, err := Transform(posts, Options{Site: "csayantan.wordpress.com", PagePath: "/", ArticlePath: "/blog", MediaURL: "/media/wordpress"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Media) != 0 || !strings.Contains(s.Items[0].Blocks[0].HTML, "https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf") {
+		t.Fatalf("media=%v blocks=%+v", s.Media, s.Items[0].Blocks)
+	}
+}

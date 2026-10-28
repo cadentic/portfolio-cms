@@ -3572,7 +3572,7 @@
         },
         {
           "type": "html",
-          "html": "<p><a href=\"/media/wordpress/2011/06/resume.pdf\">Resume</a></p>"
+          "html": "<p><a href=\"https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf\">Resume</a></p>"
         }
       ],
       "author_name": "csayantan",
@@ -4352,12 +4352,6 @@
       "height": 461
     },
     {
-      "source_url": "https://csayantan.wordpress.com/wp-content/uploads/2009/04/resume_s1-chakraborty2.pdf",
-      "file": "2009/04/resume_s1-chakraborty2.pdf",
-      "url": "/media/wordpress/2009/04/resume_s1-chakraborty2.pdf",
-      "kind": "file"
-    },
-    {
       "source_url": "https://csayantan.wordpress.com/wp-content/uploads/2011/06/ase-2.jpg",
       "file": "2011/06/ase-2.jpg",
       "url": "/media/wordpress/2011/06/ase-2.jpg",
@@ -4412,12 +4406,6 @@
       "kind": "image",
       "width": 2480,
       "height": 3507
-    },
-    {
-      "source_url": "https://csayantan.wordpress.com/wp-content/uploads/2011/06/resume.pdf",
-      "file": "2011/06/resume.pdf",
-      "url": "/media/wordpress/2011/06/resume.pdf",
-      "kind": "file"
     },
     {
       "source_url": "https://csayantan.wordpress.com/wp-content/uploads/2011/06/sun.jpg",

@@ -179,6 +179,12 @@ func Transform(posts []wpPost, opt Options) (*Snapshot, error) {
 			return raw
 		}
 		file := m[1]
+		// Only images are copied into the public folder. Documents (e.g. the
+		// old resume PDFs with personal contact details) keep their original
+		// URL so the owner decides about them while reviewing the draft.
+		if mediaKind(file) != "image" {
+			return canonicalMediaURL(strings.SplitN(raw, "?", 2)[0])
+		}
 		md, ok := media[file]
 		if !ok {
 			md = &Media{
