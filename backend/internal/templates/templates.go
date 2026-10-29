@@ -141,6 +141,8 @@ var System = []Input{
 		Subject: "Thanks for getting in touch", HTMLBody: `<p>Hi {{first_name}},</p><p>Thanks for your message. I've received it and will reply as soon as I can.</p><p style="color:#596675;font-size:13px">This is an automatic acknowledgement of a message sent from {{site_name}}.</p>`},
 	{Slug: "contact_notify", Name: "Contact form notification (owner)", Category: "transactional",
 		Subject: "New enquiry from {{sender_name}}", HTMLBody: `<p><strong>{{sender_name}}</strong> &lt;{{sender_email}}&gt; wrote:</p><blockquote style="border-left:3px solid #8ef0c4;padding-left:12px;color:#334">{{message}}</blockquote>`},
+	{Slug: "contact_otp", Name: "Contact form email verification code", Category: "transactional",
+		Subject: "Your verification code: {{code}}", HTMLBody: `<p>Use this code to verify your email and send your message:</p><p style="font-size:32px;letter-spacing:8px;font-weight:800;margin:18px 0">{{code}}</p><p style="font-size:13px;color:#596675">The code expires in 10 minutes. If you didn't use the contact form on {{site_name}}, ignore this email.</p>`},
 	{Slug: "resume_otp", Name: "Resume download code", Category: "transactional",
 		Subject: "Your verification code: {{code}}", HTMLBody: `<p>Use this code to download the resume:</p><p style="font-size:32px;letter-spacing:8px;font-weight:800;margin:18px 0">{{code}}</p><p style="font-size:13px;color:#596675">The code expires in 10 minutes. If you didn't request it, ignore this email.</p>`},
 	{Slug: "admin_alert", Name: "Admin alert", Category: "transactional",
