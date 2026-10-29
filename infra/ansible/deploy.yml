@@ -1,18 +1,29 @@
-# Build, push and deploy portfolio-cms.
+# Build, push and deploy portfolio-cms, then point the domain at it.
 #
 #   ansible-playbook deploy.yml -e target=gcp      # Google Cloud Run
 #   ansible-playbook deploy.yml -e target=azure    # Azure Container Apps
+#   ansible-playbook deploy.yml -e target=vps      # any VPS with root SSH (Docker Compose + Caddy)
 #
-# Needs: docker (with buildx), terraform >= 1.9, and gcloud or az signed in.
-# All secrets come from infra/terraform/secret.tfvars.
-- name: Deploy portfolio-cms
-  hosts: local
+# -e switch_dns=false deploys and smoke-tests the target without pointing the
+# domain at it: the first step of moving to another host. tools/cloudmigrate
+# runs these steps (and moves the database) for you.
+#
+# Needs: docker (with buildx), terraform >= 1.9, and gcloud or az signed in
+# (gcp/azure) or SSH key access to the server (vps). All secrets and settings
+# come from infra/terraform/secret.tfvars.
+- name: Build and deploy portfolio-cms
+  hosts: localhost
+  connection: local
   gather_facts: false
   vars:
     target: gcp
+    switch_dns: true
+    # vps only: "db" starts just the database container (used while moving data).
+    vps_up: all
     repo_root: "{{ playbook_dir }}/../.."
-    tf_dir: "{{ playbook_dir }}/../terraform/{{ target }}"
-    tfvars: "{{ playbook_dir }}/../terraform/secret.tfvars"
+    tf_root: "{{ playbook_dir }}/../terraform"
+    tf_dir: "{{ tf_root }}/{{ target }}"
+    tfvars: "{{ tf_root }}/secret.tfvars"
     image_tag: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ repo_root ~ ' rev-parse --short=12 HEAD') }}"
     registry_targets:
       gcp: ["google_project_service.apis", "google_artifact_registry_repository.images"]
@@ -22,9 +33,15 @@
     - name: Check inputs
       ansible.builtin.assert:
         that:
-          - target in ['gcp', 'azure']
+          - target in ['gcp', 'azure', 'vps']
           - lookup('ansible.builtin.fileglob', tfvars) | length > 0
-        fail_msg: "Use -e target=gcp|azure and create {{ tfvars }} from secret.tfvars.example."
+          - vps_up in ['all', 'db']
+          - vps_up == 'all' or (target == 'vps' and not (switch_dns | bool))
+          - ansible_version.full is version('2.15', '>=')
+        fail_msg: >-
+          Use -e target=gcp|azure|vps and create {{ tfvars }} from secret.tfvars.example.
+          -e vps_up=db is only for target=vps together with -e switch_dns=false.
+          This playbook needs ansible-core 2.15 or newer (pipx install 'ansible-core>=2.15').
 
     - name: Refuse to deploy uncommitted changes
       ansible.builtin.command: git -C {{ repo_root }} status --porcelain
@@ -32,80 +49,422 @@
       changed_when: false
       failed_when: git_status.stdout | length > 0 and not (allow_dirty | default(false) | bool)
 
+    # A dirty build gets its own tag, so it never overwrites the image of the
+    # commit it was built from.
+    - name: Remember the settings for the later plays
+      ansible.builtin.set_fact:
+        target: "{{ target }}"
+        switch_dns: "{{ switch_dns | bool }}"
+        image_tag: "{{ image_tag ~ ('-dirty-' ~ now(utc=true, fmt='%Y%m%d%H%M%S') if git_status.stdout | length > 0 else '') }}"
+
     - name: Terraform init
       ansible.builtin.command:
         argv: "{{ tf_base + ['init', '-input=false'] }}"
       changed_when: false
 
-    - name: Create the image registry first
-      ansible.builtin.command:
-        argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars] + (registry_targets[target] | map('regex_replace', '^', '-target=') | list) }}"
-      register: tf_registry
-      changed_when: "'No changes.' not in tf_registry.stdout"
-
-    - name: Read registry address
-      ansible.builtin.command:
-        argv: "{{ tf_base + ['output', '-raw', 'registry'] }}"
-      register: registry
+    # Deployments made before the dns/ root kept the Cloudflare records in the
+    # gcp/ or azure/ state. Applying that state would delete them, and the
+    # dns/ root would create a second set next to them, whatever the target.
+    # A state that exists but cannot be read stops the run too.
+    - name: Check the gcp and azure states for DNS records
+      ansible.builtin.shell:
+        cmd: |
+          for root in gcp azure; do
+            dir={{ tf_root | quote }}/$root
+            out=$(terraform -chdir="$dir" state list 2>&1); rc=$?
+            if [ $rc -ne 0 ] && grep -q 'terraform init' <<< "$out"; then
+              # A backend block this machine has not set up yet.
+              if out=$(terraform -chdir="$dir" init -input=false 2>&1); then
+                out=$(terraform -chdir="$dir" state list 2>&1); rc=$?
+              fi
+            fi
+            if [ $rc -eq 0 ]; then
+              if grep -q '^module\.dns\.' <<< "$out"; then echo "records $root"; fi
+            elif ! grep -q 'No state file was found' <<< "$out"; then
+              echo "unreadable $root"
+              out=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$out")
+              { grep -m 3 'Error' <<< "$out" || head -n 3 <<< "$out"; } >&2
+            fi
+          done
+        executable: /bin/bash
+      register: legacy_dns
       changed_when: false
 
-    - name: Docker login (Google Artifact Registry)
-      when: target == 'gcp'
-      ansible.builtin.command: gcloud auth configure-docker {{ registry.stdout.split('/')[0] }} --quiet
-      changed_when: false
+    - name: Stop if DNS records still live in the gcp or azure state
+      vars:
+        legacy_roots: "{{ legacy_dns.stdout_lines | select('match', 'records ') | map('replace', 'records ', '') | list }}"
+      when: legacy_roots | length > 0
+      ansible.builtin.fail:
+        msg: >-
+          The {{ legacy_roots | join(' and ') }} Terraform state still holds the Cloudflare records, which now
+          belong to infra/terraform/dns. Move them once, from the repository root, with
+          `python3 tools/cloudmigrate/cloudmigrate.py dns adopt {{ legacy_roots | first }}`, then run this again.
 
-    - name: Docker login (Azure Container Registry)
-      when: target == 'azure'
-      ansible.builtin.command: az acr login --name {{ registry.stdout.split('.')[0] }}
-      changed_when: false
+    - name: Stop if a gcp or azure state cannot be read
+      vars:
+        unreadable: "{{ legacy_dns.stdout_lines | select('match', 'unreadable ') | map('replace', 'unreadable ', '') | list }}"
+      when: unreadable | length > 0
+      ansible.builtin.fail:
+        msg: >-
+          Could not check whether the {{ unreadable | join(' and ') }} Terraform state still holds the Cloudflare
+          records: {{ legacy_dns.stderr }}. Sign in to the cloud that keeps that state and run this again. If this
+          site was never deployed there, comment out the backend block in infra/terraform/{{ unreadable | first }}/main.tf.
 
-    - name: Build and push images
+    # The media bucket comes first: the site's settings include its key, if any.
+    - name: Read media_storage from secret.tfvars
+      ansible.builtin.set_fact:
+        media_storage: "{{ (lookup('ansible.builtin.file', tfvars) | regex_findall('(?m)^\\s*media_storage\\s*=\\s*\"(\\w+)\"')) | first | default('local') }}"
+
+    - name: Check that Cloud Run and Container Apps have a media bucket
+      ansible.builtin.assert:
+        that: target == 'vps' or media_storage != 'local'
+        fail_msg: >-
+          Cloud Run and Container Apps discard files written to the container, so uploads would be lost.
+          Set media_storage = "gcs" or "azure" (and the bucket name) in secret.tfvars.
+
+    - name: Media bucket
+      when: media_storage != 'local'
+      vars:
+        media_base: ["terraform", "-chdir={{ tf_root }}/media-{{ media_storage }}"]
+        # Only a site in the bucket's own cloud can use its managed identity.
+        media_key_needed: "{{ (target, media_storage) not in [('gcp', 'gcs'), ('azure', 'azure')] }}"
+      block:
+        - name: Terraform init (media bucket)
+          ansible.builtin.command:
+            argv: "{{ media_base + ['init', '-input=false'] }}"
+          changed_when: false
+
+        - name: Terraform apply (media bucket)
+          ansible.builtin.command:
+            argv: "{{ media_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars] }}"
+          register: tf_media
+          changed_when: "'No changes.' not in tf_media.stdout"
+
+        - name: Read the media key
+          ansible.builtin.command:
+            argv: "{{ media_base + ['output', '-raw', 'credentials'] }}"
+          register: media_key
+          changed_when: false
+          no_log: true
+
+        - name: Check that the site can reach the bucket
+          ansible.builtin.assert:
+            that: media_key.stdout | length > 0 or not media_key_needed
+            fail_msg: >-
+              A site on {{ target }} reaches a {{ media_storage }} bucket with a key limited to it.
+              Set media_access_key = true in secret.tfvars and run the playbook again.
+
+    - name: Hand the media key to the site's Terraform root
+      ansible.builtin.copy:
+        content: "{{ {'media_gcs_credentials': media_key.stdout | default('') if media_storage == 'gcs' else '',
+                      'media_azure_sas': media_key.stdout | default('') if media_storage == 'azure' else ''} | to_json }}\n"
+        dest: "{{ tf_dir }}/media.auto.tfvars.json"
+        mode: "0600"
+      no_log: true
+
+    - name: Cloud Run or Container Apps
+      when: target != 'vps'
+      block:
+        - name: Create the image registry first
+          ansible.builtin.command:
+            argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars] + (registry_targets[target] | map('regex_replace', '^', '-target=') | list) }}"
+          register: tf_registry
+          changed_when: "'No changes.' not in tf_registry.stdout"
+
+        - name: Read registry address
+          ansible.builtin.command:
+            argv: "{{ tf_base + ['output', '-raw', 'registry'] }}"
+          register: registry
+          changed_when: false
+
+        - name: Docker login (Google Artifact Registry)
+          when: target == 'gcp'
+          ansible.builtin.command: gcloud auth configure-docker {{ registry.stdout.split('/')[0] }} --quiet
+          changed_when: false
+
+        - name: Docker login (Azure Container Registry)
+          when: target == 'azure'
+          ansible.builtin.command: az acr login --name {{ registry.stdout.split('.')[0] }}
+          changed_when: false
+
+        - name: Build and push images
+          ansible.builtin.command:
+            argv: "{{ ['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--push'] + item.args
+                      + ['-t', registry.stdout ~ '/' ~ item.name ~ ':' ~ image_tag, repo_root ~ '/' ~ item.context] }}"
+          loop:
+            - { name: api, context: backend, args: ["--target=api"] }
+            - { name: web, context: frontend, args: [] }
+          loop_control: { label: "{{ item.name }}" }
+          changed_when: true
+
+        # Azure adds a hostname only after checking its DNS records, so on the
+        # first deploy the hostnames wait until the dns/ root has run.
+        - name: Check whether the domain is already bound (Azure)
+          when: target == 'azure'
+          ansible.builtin.command:
+            argv: "{{ tf_base + ['state', 'list', 'azurerm_container_app_custom_domain.site'] }}"
+          register: azure_bound
+          changed_when: false
+          failed_when: false
+
+        - name: Terraform apply
+          ansible.builtin.command:
+            argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars,
+                   '-var=api_image=' ~ registry.stdout ~ '/api:' ~ image_tag,
+                   '-var=web_image=' ~ registry.stdout ~ '/web:' ~ image_tag]
+                   + (['-var=domain_ready=' ~ ((azure_bound.stdout | default('') | trim | length > 0) | string | lower)] if target == 'azure' else []) }}"
+          register: tf_apply
+          changed_when: "'No changes.' not in tf_apply.stdout"
+
+    - name: Render the server settings (VPS)
+      when: target == 'vps'
       ansible.builtin.command:
-        argv: "{{ ['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--push'] + item.args
-                  + ['-t', registry.stdout ~ '/' ~ item.name ~ ':' ~ image_tag, repo_root ~ '/' ~ item.context] }}"
-      loop:
-        - { name: api, context: backend, args: ["--target=api"] }
-        - { name: web, context: frontend, args: [] }
-      loop_control: { label: "{{ item.name }}" }
-      changed_when: true
-
-    - name: Terraform apply
-      ansible.builtin.command:
-        argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars,
-               '-var=api_image=' ~ registry.stdout ~ '/api:' ~ image_tag,
-               '-var=web_image=' ~ registry.stdout ~ '/web:' ~ image_tag] }}"
+        argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars] }}"
       register: tf_apply
       changed_when: "'No changes.' not in tf_apply.stdout"
+
+    - name: Read the server's .env (VPS)
+      when: target == 'vps'
+      ansible.builtin.command:
+        argv: "{{ tf_base + ['output', '-raw', 'env_file'] }}"
+      register: vps_env
+      changed_when: false
+      no_log: true
 
     - name: Read outputs
       ansible.builtin.command:
         argv: "{{ tf_base + ['output', '-json'] }}"
       register: tf_out_raw
       changed_when: false
+      no_log: true # the vps root's env_file output holds secrets
 
     - name: Parse outputs
       ansible.builtin.set_fact:
-        tf_out: "{{ tf_out_raw.stdout | from_json }}"
+        tf_out: "{{ tf_out_raw.stdout | from_json | dict2items | rejectattr('key', 'equalto', 'env_file') | items2dict }}"
 
-    - name: Issue free managed certificates (Azure)
-      when: target == 'azure'
-      ansible.builtin.include_tasks: tasks/azure-certificates.yml
-      loop: "{{ tf_out.hostnames.value }}"
-      loop_control: { loop_var: hostname }
+    - name: VPS images
+      when: target == 'vps'
+      vars:
+        vps_images: "{{ lookup('ansible.builtin.env', 'TMPDIR') | default('/tmp', true) }}/portfolio-images-{{ image_tag }}.tar.gz"
+      block:
+        - name: Build images for the server
+          ansible.builtin.command:
+            argv: "{{ ['docker', 'buildx', 'build', '--platform', tf_out.platform.value, '--load'] + item.args
+                      + ['-t', 'portfolio-' ~ item.name ~ ':' ~ image_tag, repo_root ~ '/' ~ item.context] }}"
+          loop:
+            - { name: api, context: backend, args: ["--target=api"] }
+            - { name: web, context: frontend, args: [] }
+          loop_control: { label: "{{ item.name }}" }
+          changed_when: true
 
+        - name: Save the images to a file
+          ansible.builtin.shell:
+            cmd: set -o pipefail && docker save portfolio-api:{{ image_tag }} portfolio-web:{{ image_tag }} | gzip -1 > {{ vps_images | quote }}
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Add the server to this run
+          ansible.builtin.add_host:
+            name: vps
+            groups: vps_target
+            ansible_host: "{{ tf_out.ssh.value.host }}"
+            ansible_user: "{{ tf_out.ssh.value.user }}"
+            ansible_port: "{{ tf_out.ssh.value.port }}"
+            # The last play runs on this machine (connection: local) and hands
+            # one task to the server, which must still go over SSH.
+            ansible_connection: ssh
+            vps_dir: "{{ tf_out.ssh.value.dir }}"
+            image_tag: "{{ image_tag }}"
+            vps_images: "{{ vps_images }}"
+            vps_up: "{{ vps_up }}"
+
+- name: Run the stack on the VPS
+  hosts: vps_target
+  gather_facts: true
+  become: "{{ ansible_user != 'root' }}"
+  tasks:
+    - name: Install Docker and open the web ports
+      ansible.builtin.include_tasks: tasks/vps-docker.yml
+
+    # Owned by the SSH user, so that `docker compose` (and tools/cloudmigrate)
+    # can read .env without sudo.
+    - name: Create the app directory
+      ansible.builtin.file:
+        path: "{{ vps_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0750"
+
+    - name: Copy the compose file and Caddyfile
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../vps/{{ item }}"
+        dest: "{{ vps_dir }}/{{ item }}"
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+      loop: [compose.yml, Caddyfile]
+
+    - name: Write the .env file
+      ansible.builtin.copy:
+        # register strips the output's final newline, so add it back.
+        content: "{{ hostvars['localhost'].vps_env.stdout | trim }}\nIMAGE_TAG='{{ image_tag }}'\n"
+        dest: "{{ vps_dir }}/.env"
+        owner: "{{ ansible_user }}"
+        mode: "0600"
+      no_log: true
+
+    # Next to the app, not in /tmp, which is a small RAM disk on some servers.
+    - name: Upload the images
+      ansible.builtin.copy:
+        src: "{{ vps_images }}"
+        dest: "{{ vps_dir }}/images-{{ image_tag }}.tar.gz"
+        mode: "0600"
+
+    - name: Load the images
+      ansible.builtin.command: docker load -i {{ vps_dir }}/images-{{ image_tag }}.tar.gz
+      changed_when: true
+
+    - name: Remove the image file on this machine
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vps_images }}"
+        state: absent
+
+    - name: Remove the uploaded image file
+      ansible.builtin.file:
+        path: "{{ vps_dir }}/images-{{ image_tag }}.tar.gz"
+        state: absent
+
+    - name: Start the database only
+      when: vps_up == 'db'
+      ansible.builtin.command:
+        cmd: docker compose up -d --wait --wait-timeout 180 db
+        chdir: "{{ vps_dir }}"
+      changed_when: true
+
+    - name: Start or update the stack
+      when: vps_up == 'all'
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans --wait --wait-timeout 300
+        chdir: "{{ vps_dir }}"
+      changed_when: true
+
+    - name: Smoke test the web container
+      when: vps_up == 'all'
+      ansible.builtin.command:
+        cmd: docker compose exec -T web wget -qO /dev/null http://127.0.0.1:4000{{ item }}
+        chdir: "{{ vps_dir }}"
+      loop: [/healthz, /api/public/site, /robots.txt, /llms.txt, /sitemap.xml, /]
+      register: smoke
+      retries: 10
+      delay: 6
+      until: smoke.rc == 0
+      changed_when: false
+
+    # Each release has its own tag, so old images are never "dangling" and
+    # prune alone would keep them all.
+    - name: Remove the images of earlier releases
+      when: vps_up == 'all'
+      vars:
+        image_format: !unsafe '{{.Repository}}:{{.Tag}}'
+      ansible.builtin.shell:
+        cmd: >-
+          docker image ls --format '{{ image_format }}' | grep -E '^portfolio-(api|web):'
+          | grep -vxF -e 'portfolio-api:{{ image_tag }}' -e 'portfolio-web:{{ image_tag }}'
+          | xargs -r docker image rm; docker image prune -f
+      register: image_cleanup
+      changed_when: "'Untagged' in image_cleanup.stdout or 'Deleted' in image_cleanup.stdout"
+      failed_when: false
+
+- name: Point the domain at the target and check it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tf_root: "{{ playbook_dir }}/../terraform"
+    tfvars: "{{ tf_root }}/secret.tfvars"
+    tf_dir: "{{ tf_root }}/{{ target }}"
+    dns_base: ["terraform", "-chdir={{ tf_root }}/dns"]
+  tasks:
+    # Not /healthz: Cloud Run's front end answers paths ending in "z" itself.
     - name: Smoke test the service URL
+      when: target != 'vps'
       ansible.builtin.uri:
         url: "{{ tf_out.web_url.value }}{{ item }}"
         status_code: 200
-      loop: [/healthz, /api/public/site, /robots.txt, /llms.txt, /sitemap.xml, /]
+      loop: [/api/public/site, /robots.txt, /llms.txt, /sitemap.xml, /]
       register: smoke
       retries: 10
       delay: 6
       until: smoke.status == 200
 
+    - name: Point the domain at {{ target }}
+      when: switch_dns | bool
+      block:
+        - name: Terraform init (DNS)
+          ansible.builtin.command:
+            argv: "{{ dns_base + ['init', '-input=false'] }}"
+          changed_when: false
+
+        - name: Terraform apply (DNS)
+          ansible.builtin.command:
+            argv: "{{ dns_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars,
+                   '-var=site_target=' ~ target, '-var=site_records=' ~ (tf_out.site_records.value | to_json)] }}"
+          register: tf_dns
+          changed_when: "'No changes.' not in tf_dns.stdout"
+
+        - name: Check whether the site already answers over HTTPS (VPS)
+          when: target == 'vps' and tf_dns is not changed
+          ansible.builtin.uri:
+            url: "{{ tf_out.site_url.value }}/robots.txt"
+            status_code: 200
+            timeout: 10
+          register: vps_https
+          failed_when: false
+
+        # Caddy started before the domain pointed here, so its first certificate
+        # request failed and it backs off for up to hours. A restart retries now,
+        # also on a re-run while the site still has no certificate.
+        - name: Restart Caddy so it requests the certificates now (VPS)
+          when: target == 'vps' and (tf_dns is changed or vps_https.status | default(0) != 200)
+          delegate_to: vps
+          become: "{{ hostvars['vps'].ansible_user != 'root' }}"
+          ansible.builtin.command:
+            cmd: docker compose restart caddy
+            chdir: "{{ hostvars['vps'].vps_dir }}"
+          changed_when: true
+
+        - name: Add the hostnames now that DNS points here (Azure, first deploy)
+          when: target == 'azure' and tf_out.pending_hostnames.value | length > 0
+          ansible.builtin.command:
+            argv: "{{ ['terraform', '-chdir=' ~ tf_dir, 'apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars,
+                   '-var=api_image=' ~ registry.stdout ~ '/api:' ~ image_tag,
+                   '-var=web_image=' ~ registry.stdout ~ '/web:' ~ image_tag, '-var=domain_ready=true'] }}"
+          register: tf_bind
+          changed_when: true
+
+        - name: Re-read outputs (Azure)
+          when: target == 'azure'
+          ansible.builtin.command:
+            argv: ["terraform", "-chdir={{ tf_dir }}", "output", "-json"]
+          register: tf_out_raw2
+          changed_when: false
+
+        - name: Parse outputs (Azure)
+          when: target == 'azure'
+          ansible.builtin.set_fact:
+            tf_out: "{{ tf_out_raw2.stdout | from_json }}"
+
+        - name: Issue free managed certificates (Azure)
+          when: target == 'azure'
+          ansible.builtin.include_tasks: tasks/azure-certificates.yml
+          loop: "{{ tf_out.hostnames.value }}"
+          loop_control: { loop_var: hostname }
+
     - name: Check the public domain (may take a while for DNS and certificates)
+      when: switch_dns | bool
       ansible.builtin.uri:
-        url: "{{ tf_out.site_url.value }}/healthz"
+        url: "{{ tf_out.site_url.value }}/robots.txt"
         status_code: 200
       register: site
       failed_when: false
@@ -116,7 +475,8 @@
     - name: Summary
       ansible.builtin.debug:
         msg:
-          - "Deployed {{ image_tag }} to {{ target }}."
+          - "Deployed {{ image_tag }} to {{ target }} (media: {{ media_storage }})."
           - "Service URL: {{ tf_out.web_url.value }}"
-          - "Site: {{ tf_out.site_url.value }} ({{ 'up' if site.status == 200 else 'not reachable yet; DNS or certificate still provisioning' }})"
+          - "{{ ('Site: ' ~ tf_out.site_url.value ~ ' (' ~ ('up' if site.status | default(0) == 200 else 'not reachable yet; DNS or certificate still provisioning') ~ ')')
+                if switch_dns | bool else 'DNS not changed (switch_dns=false): the domain still points at the previous host.' }}"
           - "Set these webhook URLs (with webhook:<secret>@ before the host) in Brevo and Mailjet: {{ tf_out.webhook_urls.value }}"

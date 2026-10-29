@@ -199,3 +199,16 @@ func TestDocumentsAreNotCopied(t *testing.T) {
 		t.Fatalf("media=%v blocks=%+v", s.Media, s.Items[0].Blocks)
 	}
 }
+
+func TestSeedDollarQuoteCannotBeClosedBySlug(t *testing.T) {
+	snap := testSnapshot(t)
+	snap.Items[0].Slug = "evil$wp$; CREATE TABLE pwned(); --"
+	var buf bytes.Buffer
+	if err := writeSeed(&buf, snap); err != nil {
+		t.Fatal(err)
+	}
+	sql := buf.String()
+	if !strings.Contains(sql, "DO $wp1$\n") || strings.Count(sql, "$wp1$") != 2 {
+		t.Fatalf("expected a fresh dollar-quote tag:\n%s", sql[strings.Index(sql, "DO $"):])
+	}
+}

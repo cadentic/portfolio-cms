@@ -61,16 +61,24 @@ WHERE cms_pages.status = 'draft' AND cms_pages.updated_at = cms_pages.created_at
 	}
 
 	p("\n-- Report items skipped because their slug is taken by other content.\n")
-	p("DO $$\nDECLARE missing text;\nBEGIN\n  SELECT string_agg(v.slug, ', ') INTO missing\n  FROM (VALUES\n")
+	var body strings.Builder
+	body.WriteString("\nDECLARE missing text;\nBEGIN\n  SELECT string_agg(v.slug, ', ') INTO missing\n  FROM (VALUES\n")
 	for i, it := range snap.Items {
 		sep := ","
 		if i == len(snap.Items)-1 {
 			sep = ""
 		}
-		p("    (%s, %s)%s\n", q(strconv.FormatInt(it.SourceID, 10)), q(it.Slug), sep)
+		fmt.Fprintf(&body, "    (%s, %s)%s\n", q(strconv.FormatInt(it.SourceID, 10)), q(it.Slug), sep)
 	}
-	p("  ) AS v(source_id, slug)\n  WHERE NOT EXISTS (SELECT 1 FROM cms_pages c WHERE c.source = 'wordpress' AND c.source_id = v.source_id);\n")
-	p("  IF missing IS NOT NULL THEN\n    RAISE NOTICE 'wordpress import skipped (slug already in use): %%', missing;\n  END IF;\nEND $$;\n")
+	body.WriteString("  ) AS v(source_id, slug)\n  WHERE NOT EXISTS (SELECT 1 FROM cms_pages c WHERE c.source = 'wordpress' AND c.source_id = v.source_id);\n")
+	body.WriteString("  IF missing IS NOT NULL THEN\n    RAISE NOTICE 'wordpress import skipped (slug already in use): %', missing;\n  END IF;\nEND ")
+	// The body holds slugs, so close it with a dollar-quote tag that none of
+	// them contains.
+	tag := "$wp$"
+	for i := 1; strings.Contains(body.String(), tag); i++ {
+		tag = "$wp" + strconv.Itoa(i) + "$"
+	}
+	p("DO %s%s%s;\n", tag, body.String(), tag)
 
 	p("\n-- Page hierarchy (only set where the item has no parent yet).\n")
 	for _, it := range snap.Items {

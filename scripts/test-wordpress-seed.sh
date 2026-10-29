@@ -10,7 +10,7 @@ mkdir -p "$tmp/content/wordpress" && cp -r tools/wpimport/testdata/raw "$tmp/con
 
 url="${TEST_DATABASE_URL:-}"
 if [ -z "$url" ]; then
-  cid="$(docker run -d -e POSTGRES_PASSWORD=pw -p 127.0.0.1::5432 postgres:16)"
+  cid="$(docker run -d -e POSTGRES_PASSWORD=pw -p 127.0.0.1::5432 postgres:18-alpine)"
   port="$(docker port "$cid" 5432 | head -1 | sed 's/.*://')"
   url="postgres://postgres:pw@127.0.0.1:$port/postgres?sslmode=disable"
   until psql "$url" -c 'select 1' >/dev/null 2>&1; do sleep 1; done
