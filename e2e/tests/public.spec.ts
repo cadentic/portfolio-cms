@@ -27,6 +27,18 @@ test('server-rendered HTML carries SEO, Open Graph and JSON-LD', async ({ reques
   expect(html).toContain('<details class="sitemap"');
 });
 
+test('titles, meta descriptions and image alts end with the brand suffix', async ({ request }) => {
+  const suffix = 'Sayantan Chakraborty, Oracle DBA';
+  for (const path of ['/', '/blog', '/videos', '/privacy']) {
+    const html = await (await request.get(path)).text();
+    expect(html).toMatch(new RegExp(`<title>[^<]*${suffix}</title>`));
+    for (const tag of ['name="description"', 'property="og:title"', 'property="og:description"', 'name="twitter:title"', 'property="og:image:alt"']) {
+      expect(html, `${path} ${tag}`).toMatch(new RegExp(`<meta ${tag} content="[^"]*${suffix}"`));
+    }
+    for (const m of html.matchAll(/<img\b[^>]*>/g)) expect(m[0], path).toMatch(new RegExp(`alt="[^"]*${suffix}"`));
+  }
+});
+
 test('unknown paths return a real 404', async ({ page }) => {
   const res = await page.goto('/this-page-does-not-exist');
   expect(res?.status()).toBe(404);

@@ -104,6 +104,29 @@ func DefaultEmail() Email {
 	}
 }
 
+// Site holds public-site branding applied to every page's meta tags and image
+// alt text.
+type Site struct {
+	// BrandSuffix ends every title, description, Open Graph/Twitter tag and
+	// image alt text on the public site. Empty turns the suffix off.
+	BrandSuffix string `json:"brand_suffix"`
+}
+
+const DefaultBrandSuffix = "Sayantan Chakraborty, Oracle DBA"
+
+func DefaultSite() Site { return Site{BrandSuffix: DefaultBrandSuffix} }
+
+func (si *Site) Validate() error {
+	si.BrandSuffix = strings.Join(strings.Fields(si.BrandSuffix), " ")
+	if len([]rune(si.BrandSuffix)) > 80 {
+		return errors.New("brand_suffix must be at most 80 characters")
+	}
+	if strings.ContainsAny(si.BrandSuffix, "<>\"") {
+		return errors.New("brand_suffix cannot contain <, > or \"")
+	}
+	return nil
+}
+
 func DefaultDelivery() Delivery {
 	return Delivery{
 		ProviderRetryBaseSeconds: 2,
@@ -192,6 +215,7 @@ type Store struct {
 	mu       sync.Mutex
 	email    *Email
 	delivery *Delivery
+	site     *Site
 	loadedAt time.Time
 }
 
@@ -216,15 +240,21 @@ func (s *Store) refresh(ctx context.Context) error {
 	if s.email != nil && time.Since(s.loadedAt) < s.ttl {
 		return nil
 	}
-	e, d := DefaultEmail(), DefaultDelivery()
+	e, d, si := DefaultEmail(), DefaultDelivery(), DefaultSite()
 	if err := s.load(ctx, "email", &e); err != nil {
 		return err
 	}
 	if err := s.load(ctx, "delivery", &d); err != nil {
 		return err
 	}
+	if err := s.load(ctx, "site", &si); err != nil {
+		return err
+	}
 	_ = d.Validate()
-	s.email, s.delivery, s.loadedAt = &e, &d, time.Now()
+	if si.Validate() != nil {
+		si = DefaultSite()
+	}
+	s.email, s.delivery, s.site, s.loadedAt = &e, &d, &si, time.Now()
 	return nil
 }
 
@@ -244,6 +274,15 @@ func (s *Store) Delivery(ctx context.Context) (Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return *s.delivery, nil
+}
+
+func (s *Store) Site(ctx context.Context) (Site, error) {
+	if err := s.refresh(ctx); err != nil {
+		return DefaultSite(), err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return *s.site, nil
 }
 
 func (s *Store) Invalidate() {
@@ -273,4 +312,11 @@ func (s *Store) SaveEmail(ctx context.Context, e Email, actor string) error {
 func (s *Store) SaveDelivery(ctx context.Context, d Delivery, actor string) error {
 	_ = d.Validate()
 	return s.save(ctx, "delivery", d, actor)
+}
+
+func (s *Store) SaveSite(ctx context.Context, si Site, actor string) error {
+	if err := si.Validate(); err != nil {
+		return fmt.Errorf("invalid site settings: %w", err)
+	}
+	return s.save(ctx, "site", si, actor)
 }

@@ -3,10 +3,14 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, of, shareReplay } from 'rxjs';
 import { Page, Paged, SiteConfig } from './models';
 
+/** Default text that ends every meta tag and image alt; the owner can change it in Admin › SEO & branding. */
+export const DEFAULT_BRAND_SUFFIX = 'Sayantan Chakraborty, Oracle DBA';
+
 const fallbackConfig: SiteConfig = {
   site_url: '', blog_enabled: false, gtm_id: '', ga4_id: '', newsletter_topics: ['articles', 'videos', 'career'],
   consent_text: 'I agree to receive the newsletter by email. I can unsubscribe at any time.',
   privacy_policy_url: '/privacy', privacy_policy_version: '', resume_available: true,
+  brand_suffix: DEFAULT_BRAND_SUFFIX,
 };
 
 @Injectable({ providedIn: 'root' })

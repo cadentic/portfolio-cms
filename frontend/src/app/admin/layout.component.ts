@@ -27,6 +27,7 @@ import { AuthService } from './auth.service';
           <a class="sub" routerLink="/admin/email/suppressions" routerLinkActive="active">Suppressions</a>
           <a class="sub" routerLink="/admin/email/settings" routerLinkActive="active">Settings</a>
           <div class="group">System</div>
+          <a routerLink="/admin/seo" routerLinkActive="active">⌕ SEO &amp; branding</a>
           <a routerLink="/admin/mcp" routerLinkActive="active">⚡ MCP connector</a>
           <a routerLink="/admin/audit" routerLinkActive="active">☰ Audit log</a>
           <a href="/" target="_blank" rel="noopener">↗ View site</a>

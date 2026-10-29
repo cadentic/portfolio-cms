@@ -3,6 +3,7 @@ import { Component, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, map, of } from 'rxjs';
+import { Brand } from '../core/brand';
 import { PROFILE } from '../core/profile';
 import { PublicApi } from '../core/public-api.service';
 import { Seo } from '../core/seo.service';
@@ -29,7 +30,7 @@ import { YoutubeComponent } from '../shared/youtube.component';
         </div>
         <aside class="hero-panel" aria-label="Professional snapshot">
           <div class="hero-photo">
-            <img [src]="p.photo" width="104" height="104" [alt]="'Portrait of ' + p.name" fetchpriority="high" />
+            <img [src]="p.photo" width="104" height="104" [alt]="brand.alt('Portrait photo')" fetchpriority="high" />
             <div><strong>{{ p.name }}</strong><span>{{ p.shortRole }}</span></div>
           </div>
           @for (m of p.metrics; track m.value) {
@@ -186,6 +187,7 @@ export class HomeComponent {
   readonly ui = inject(UiState);
   private api = inject(PublicApi);
   private seo = inject(Seo);
+  protected brand = inject(Brand);
   readonly consentText = toSignal(this.api.site().pipe(map((c) => c.consent_text)), { initialValue: '' });
   private articles = toSignal(this.api.articles(12).pipe(map((r) => r.items), catchError(() => of([]))), { initialValue: [] });
   readonly latest = () => this.articles()[0];
@@ -196,7 +198,7 @@ export class HomeComponent {
 
   constructor() {
     this.seo.set({
-      title: `${PROFILE.name} · Oracle DBA & Database Reliability Engineer`,
+      title: 'Oracle DBA & Database Reliability Engineer in Bangalore',
       description: 'Oracle Database Administrator and Database Reliability Engineer in Bangalore with 11+ years of RAC, Data Guard, GoldenGate, RMAN and Oracle EBS experience. Portfolio, articles and videos.',
       path: '/',
       type: 'profile',

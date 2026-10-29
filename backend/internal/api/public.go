@@ -43,6 +43,7 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 
 func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 	es, _ := s.Settings.Email(r.Context())
+	si, _ := s.Settings.Site(r.Context())
 	var articles int
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM cms_pages WHERE kind='article' AND status='published'`).Scan(&articles)
 	w.Header().Set("Cache-Control", "public, max-age=60")
@@ -56,6 +57,7 @@ func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 		"privacy_policy_url":     es.PrivacyPolicyURL,
 		"privacy_policy_version": es.PrivacyPolicyVersion,
 		"resume_available":       s.Cfg.ResumeFilePath != "",
+		"brand_suffix":           si.BrandSuffix,
 	})
 }
 

@@ -73,6 +73,8 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	m.HandleFunc("PUT /api/admin/settings/email", s.putEmailSettings)
 	m.HandleFunc("GET /api/admin/settings/delivery", s.getDeliverySettings)
 	m.HandleFunc("PUT /api/admin/settings/delivery", s.putDeliverySettings)
+	m.HandleFunc("GET /api/admin/settings/site", s.getSiteSettings)
+	m.HandleFunc("PUT /api/admin/settings/site", s.putSiteSettings)
 
 	m.HandleFunc("GET /api/admin/email/monitor", s.monitor)
 	m.HandleFunc("GET /api/admin/email/jobs", s.listJobs)
@@ -746,6 +748,28 @@ func (s *Server) putDeliverySettings(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "settings.delivery", "settings", "delivery", map[string]any{"settings": in})
 	s.getDeliverySettings(w, r)
+}
+
+func (s *Server) getSiteSettings(w http.ResponseWriter, r *http.Request) {
+	si, err := s.Settings.Site(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	writeJSON(w, 200, si)
+}
+
+func (s *Server) putSiteSettings(w http.ResponseWriter, r *http.Request) {
+	in := settings.DefaultSite()
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.Settings.SaveSite(r.Context(), in, actor(r)); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.audit(r, "settings.site", "settings", "site", map[string]any{"brand_suffix": in.BrandSuffix})
+	s.getSiteSettings(w, r)
 }
 
 // --- monitoring & jobs ---------------------------------------------------------------
