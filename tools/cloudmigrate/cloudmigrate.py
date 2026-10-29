@@ -1177,9 +1177,14 @@ def media_preflight(cfg: dict, frm: str | None, to: str) -> None:
                "\"gcs\" or \"azure\" and the bucket in secret.tfvars (see docs/deploy.md#media)." + hint)
 
 
+def site_host(cfg: dict) -> str:
+    """The hostname that serves the site: site_host, or the domain itself (as the Terraform roots work it out)."""
+    return str(cfg.get("site_host") or cfg.get("domain") or "cadentic.dev").lower()
+
+
 def after_move_notes(frm: str | None, to: str, db_from: str | None, db_to: str | None, cfg: dict) -> list[str]:
-    domain = cfg.get("domain") or "cadentic.dev"
-    notes = [f"Open https://{domain} and https://{domain}/admin, and send a test email "
+    host = site_host(cfg)
+    notes = [f"Open https://{host} and https://{host}/admin, and send a test email "
              "(Subscribers & Email > Providers > Test send). DNS changes can take a few minutes."]
     if db_to:
         notes.append(f"The {db_from} database is read-only and no longer used. Its dump is in backups/. "
@@ -1225,7 +1230,8 @@ def cmd_check(args) -> int:
     say(f"  PostgreSQL {PG_MAJOR} client tools: {'on this machine' if client == 'local' else 'from ' + PG_IMAGE}")
     cfg = load_tfvars()
     say("\nsecret.tfvars:")
-    say(f"  domain           {cfg.get('domain')}")
+    say(f"  domain           {cfg.get('domain')} (DNS zone and mail records)")
+    say(f"  site             https://{site_host(cfg)}")
     say(f"  database_url     {redact(cfg['database_url']) if cfg.get('database_url') else 'not set'}")
     for target, keys in [("gcp", ["gcp_project_id", "gcp_region"]), ("azure", ["azure_subscription_id", "azure_location"]),
                          ("vps", ["vps_ipv4", "vps_ssh_user", "vps_local_db"])]:
@@ -1236,7 +1242,7 @@ def cmd_check(args) -> int:
              f"{cfg.get('media_azure_container') or 'media'}", "local": "the server's media volume"}.get(media, media)
     say(f"  media            {media}: {where}{', with a bucket key' if cfg.get('media_access_key') else ''}")
     host = current_host()
-    say(f"\nThe domain points at: {host or 'unknown (the dns/ state is not readable here, or its records match no deployed target)'}")
+    say(f"\nThe site points at: {host or 'unknown (the dns/ state is not readable here, or its records match no deployed target)'}")
     try:
         for name in legacy_dns_roots():
             say(f"The {name} state still holds the Cloudflare records: run `cloudmigrate.py dns adopt {name}`.")

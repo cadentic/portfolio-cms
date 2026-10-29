@@ -5,8 +5,25 @@
 
 variable "domain" {
   type        = string
-  description = "Public site domain, also used as the sending domain."
+  description = "The Cloudflare zone and the email sending domain. SPF, DMARC and the Brevo/Mailjet records always sit here, wherever the site is served."
   default     = "cadentic.dev"
+}
+
+variable "site_host" {
+  type        = string
+  default     = ""
+  description = "Hostname that serves the site: the domain itself (empty, the default) or a subdomain of it such as profile.cadentic.dev. Only the site records move; the mail records stay on domain."
+  validation {
+    condition     = var.site_host == "" || lower(var.site_host) == var.domain || (endswith(lower(var.site_host), ".${var.domain}") && can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9-]+$", lower(var.site_host))))
+    error_message = "site_host must be empty, the domain itself, or a hostname under it (for example profile.cadentic.dev)."
+  }
+}
+
+variable "site_www" {
+  type        = bool
+  default     = null
+  nullable    = true
+  description = "Also serve www.<site_host>. Unset: yes when the site is on the domain itself, no on a subdomain."
 }
 
 variable "api_image" {
@@ -253,6 +270,13 @@ variable "media_azure_sas" {
 }
 
 locals {
+  # Where the site is served. gcp/, azure/ and vps/ build their DNS records,
+  # certificates and PUBLIC_SITE_URL from these.
+  site_host    = var.site_host != "" ? lower(var.site_host) : var.domain
+  site_is_apex = local.site_host == var.domain
+  site_hosts   = concat([local.site_host], (var.site_www != null ? var.site_www : local.site_is_apex) ? ["www.${local.site_host}"] : [])
+  site_url     = "https://${local.site_host}"
+
   # The API's media settings (gcp/, azure/ and vps/ add the key, if any).
   media_env = merge(
     { MEDIA_STORAGE = var.media_storage },

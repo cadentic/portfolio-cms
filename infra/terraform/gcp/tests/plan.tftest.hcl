@@ -347,6 +347,60 @@ run "site_records_for_dns_root" {
   }
 }
 
+# site_host on a subdomain: one domain mapping and one CNAME to
+# ghs.googlehosted.com for it, nothing on the apex (where the mail records
+# stay), and the site URL and allowed hosts follow the subdomain.
+run "subdomain_site_host" {
+  command = plan
+
+  variables {
+    site_host = "profile.site.example"
+  }
+
+  assert {
+    condition     = jsonencode(output.site_records) == jsonencode([{ name = "profile.site.example", type = "CNAME", content = "ghs.googlehosted.com" }])
+    error_message = "A subdomain must get exactly one CNAME to ghs.googlehosted.com: ${jsonencode(output.site_records)}"
+  }
+
+  assert {
+    condition     = toset(keys(google_cloud_run_domain_mapping.site)) == toset(["profile.site.example"])
+    error_message = "Only the subdomain must be mapped."
+  }
+
+  assert {
+    condition     = output.site_url == "https://profile.site.example"
+    error_message = "site_url must be https://<site_host>."
+  }
+
+  assert {
+    condition     = [for e in google_cloud_run_v2_service.web.template[0].containers[0].env : e.value if e.name == "NG_ALLOWED_HOSTS"] == ["profile.site.example,*.run.app"]
+    error_message = "NG_ALLOWED_HOSTS must hold the subdomain and *.run.app."
+  }
+
+  assert {
+    condition     = [for e in google_cloud_run_v2_service.web.template[0].containers[0].env : e.value if e.name == "PUBLIC_SITE_URL"] == ["https://profile.site.example"]
+    error_message = "The web service's PUBLIC_SITE_URL must be the subdomain."
+  }
+}
+
+# site_www = true on a subdomain maps and CNAMEs www.<site_host> too.
+run "subdomain_with_www" {
+  command = plan
+
+  variables {
+    site_host = "profile.site.example"
+    site_www  = true
+  }
+
+  assert {
+    condition = jsonencode(output.site_records) == jsonencode([
+      { name = "profile.site.example", type = "CNAME", content = "ghs.googlehosted.com" },
+      { name = "www.profile.site.example", type = "CNAME", content = "ghs.googlehosted.com" },
+    ])
+    error_message = "Both hostnames must be CNAMEs to ghs.googlehosted.com: ${jsonencode(output.site_records)}"
+  }
+}
+
 # map_domain = false: no domain mappings, and no records for the dns/ root.
 run "no_domain_mapping" {
   command = plan

@@ -356,6 +356,41 @@ run "bad_gcs_bucket_name_rejected" {
   expect_failures = [var.media_gcs_bucket]
 }
 
+# --- hostnames on the web app ------------------------------------------------------
+
+# The apex and www keep the keys apex and www, so states made before site_host
+# existed do not remove and re-add them.
+run "apex_hostname_keys" {
+  command = plan
+
+  assert {
+    condition     = { for k, d in azurerm_container_app_custom_domain.site : k => d.name } == { apex = "cadentic.dev", www = "www.cadentic.dev" }
+    error_message = "The apex and www custom domains must keep the keys apex and www."
+  }
+}
+
+# domain_ready = false keeps only the hostnames already on the app
+# (ready_hosts); a new site_host waits for DNS and is listed as pending.
+run "new_site_host_waits_for_dns" {
+  command = plan
+
+  variables {
+    site_host    = "profile.cadentic.dev"
+    site_www     = true
+    domain_ready = false
+    ready_hosts  = ["www.profile.cadentic.dev", "cadentic.dev"]
+  }
+
+  assert {
+    condition     = keys(azurerm_container_app_custom_domain.site) == ["www.profile.cadentic.dev"]
+    error_message = "Only a hostname that is both served and already on the app may stay before DNS points here."
+  }
+  assert {
+    condition     = output.pending_hostnames == ["profile.cadentic.dev"]
+    error_message = "The new subdomain must be pending until DNS points here."
+  }
+}
+
 # --- computed values (apply against the mock) -----------------------------------
 # Identity ids and the verification id are unknown in a plan, so these runs
 # apply against the mocked provider. They come last so the plan runs above
@@ -416,5 +451,31 @@ run "site_records_for_dns_root" {
   assert {
     condition     = alltrue([for r in output.site_records : r.content == nonsensitive(azurerm_container_app.web.custom_domain_verification_id) if r.type == "TXT"])
     error_message = "Both asuid TXT records must hold the web app's custom_domain_verification_id."
+  }
+}
+
+# site_host on a subdomain: a CNAME to the web app and its asuid TXT record,
+# nothing on the apex (where the mail records stay).
+run "subdomain_site_records" {
+  command = apply
+
+  variables {
+    site_host = "profile.cadentic.dev"
+  }
+
+  assert {
+    condition = { for r in output.site_records : "${r.type} ${r.name}" => r.content } == {
+      "CNAME profile.cadentic.dev"     = "portfolio-web.mock-env.centralindia.azurecontainerapps.io"
+      "TXT asuid.profile.cadentic.dev" = "MOCK-VERIFICATION-ID"
+    }
+    error_message = "site_records is wrong: ${jsonencode(output.site_records)}"
+  }
+  assert {
+    condition     = output.site_url == "https://profile.cadentic.dev" && output.zone_apex == "cadentic.dev"
+    error_message = "site_url must be the subdomain and zone_apex the domain."
+  }
+  assert {
+    condition     = jsonencode(output.hostnames) == jsonencode(["profile.cadentic.dev"]) && jsonencode(keys(azurerm_container_app_custom_domain.site)) == jsonencode(["profile.cadentic.dev"])
+    error_message = "Only the subdomain must be added to the web app, keyed by its name."
   }
 }

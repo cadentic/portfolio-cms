@@ -18,7 +18,7 @@ terraform {
 variable "vps_ipv4" {
   type        = string
   default     = ""
-  description = "Public IPv4 address of the server. The apex A record points here."
+  description = "Public IPv4 address of the server. The site host's A record points here."
 }
 variable "vps_ipv6" {
   type        = string
@@ -65,7 +65,6 @@ variable "vps_db_password" {
 }
 
 locals {
-  site_url = "https://${var.domain}"
   ssh_host = var.vps_ssh_host != "" ? var.vps_ssh_host : var.vps_ipv4
   database_url = (var.vps_local_db
     ? "postgres://portfolio:${var.vps_db_password}@db:5432/portfolio?sslmode=disable"
@@ -76,6 +75,8 @@ locals {
   env = merge(local.media_env, {
     COMPOSE_PROFILES             = var.vps_local_db ? "localdb" : ""
     DOMAIN                       = var.domain
+    SITE_HOSTS                   = join(",", local.site_hosts)
+    SITE_ADDRESSES               = join(" ", local.site_hosts)
     PUBLIC_SITE_URL              = local.site_url
     DATABASE_URL                 = local.database_url
     POSTGRES_PASSWORD            = var.vps_local_db ? var.vps_db_password : ""
@@ -100,9 +101,9 @@ locals {
   })
 
   site_records = concat(
-    [{ name = var.domain, type = "A", content = var.vps_ipv4 }],
-    var.vps_ipv6 != "" ? [{ name = var.domain, type = "AAAA", content = var.vps_ipv6 }] : [],
-    [{ name = "www.${var.domain}", type = "CNAME", content = var.domain }],
+    [{ name = local.site_host, type = "A", content = var.vps_ipv4 }],
+    var.vps_ipv6 != "" ? [{ name = local.site_host, type = "AAAA", content = var.vps_ipv6 }] : [],
+    [for h in local.site_hosts : { name = h, type = "CNAME", content = local.site_host } if h != local.site_host],
   )
 }
 

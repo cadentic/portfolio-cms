@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Block, Hero, MediaItem, Page } from '../../core/models';
+import { SITE_URL } from '../../core/tokens';
 import { BlocksComponent } from '../../shared/blocks.component';
 import { HeroMediaComponent } from '../../shared/hero-media.component';
 import { AdminApi, errMsg } from '../admin-api.service';
@@ -164,7 +165,7 @@ function slugify(s: string) {
               <label class="a-row"><input type="checkbox" name="ni" [(ngModel)]="d.noindex" /> Hide from search engines</label>
               <div class="a-section" aria-label="Search result preview">
                 <div style="color:#8ab4f8;font-size:.95rem">{{ d.seo_title || d.title || 'Page title' }}</div>
-                <div class="a-muted a-mono" style="font-size:.72rem">cadentic.dev{{ previewPath() }}</div>
+                <div class="a-muted a-mono" style="font-size:.72rem">{{ siteHost }}{{ previewPath() }}</div>
                 <div style="font-size:.8rem">{{ (d.seo_description || d.excerpt || 'Add a description so search engines and AI assistants can summarise this page.').slice(0, 160) }}</div>
               </div>
             </section>
@@ -203,6 +204,8 @@ export class PageEditorComponent {
   private api = inject(AdminApi);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  /** The site's hostname for the search preview (cadentic.dev, or a subdomain such as profile.cadentic.dev). */
+  readonly siteHost = inject(SITE_URL).replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   readonly d = signal<Draft | null>(null);
   readonly error = signal('');
   readonly notice = signal('');

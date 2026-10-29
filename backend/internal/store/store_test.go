@@ -86,3 +86,46 @@ func TestReadOnlyDatabase(t *testing.T) {
 		t.Fatal("CheckMigrated on an empty database should fail")
 	}
 }
+
+// The imported WordPress pages end up with site-relative canonical URLs, so
+// they follow the site to a subdomain such as profile.cadentic.dev.
+func TestImportedCanonicalsAreSiteRelative(t *testing.T) {
+	base := os.Getenv("TEST_DATABASE_URL")
+	if base == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping database-backed test")
+	}
+	ctx := context.Background()
+	admin, err := pgx.Connect(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	db := "pcms_canon_" + hex.EncodeToString(b)
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+db); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+db+" WITH (FORCE)") })
+	u, _ := url.Parse(base)
+	u.Path = "/" + db
+	pool, err := store.Open(ctx, u.String(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	var total, absolute int
+	var sample string
+	err = pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE seo->>'canonical' ~* '^https?://'),
+		coalesce(max(seo->>'canonical') FILTER (WHERE slug = 'hello-world'), '')
+		FROM cms_pages WHERE source = 'wordpress'`).Scan(&total, &absolute, &sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total == 0 || absolute != 0 || sample != "/blog/hello-world" {
+		t.Fatalf("wordpress pages = %d, absolute canonicals = %d, hello-world canonical = %q", total, absolute, sample)
+	}
+}

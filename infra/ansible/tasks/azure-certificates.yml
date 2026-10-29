@@ -1,4 +1,5 @@
-# Binds a free managed certificate to one hostname, once.
+# Binds a free managed certificate to one hostname, once. The zone apex is
+# validated over HTTP; www and subdomains (CNAME records) over CNAME.
 - name: Check binding for {{ hostname }}
   ansible.builtin.command: >
     az containerapp hostname list -g {{ tf_out.resource_group.value }} -n {{ tf_out.web_app.value }}
@@ -12,5 +13,5 @@
     az containerapp hostname bind --hostname {{ hostname }}
     -g {{ tf_out.resource_group.value }} -n {{ tf_out.web_app.value }}
     --environment {{ tf_out.environment.value }}
-    --validation-method {{ 'CNAME' if hostname.startswith('www.') else 'HTTP' }}
+    --validation-method {{ 'HTTP' if hostname == tf_out.zone_apex.value else 'CNAME' }}
   changed_when: true

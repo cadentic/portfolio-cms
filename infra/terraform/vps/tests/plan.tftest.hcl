@@ -68,8 +68,10 @@ run "neon_database_and_local_media" {
       MEDIA_STORAGE='local'
       POSTGRES_PASSWORD=''
       PUBLIC_SITE_URL='https://portfolio.example.com'
+      SITE_ADDRESSES='portfolio.example.com www.portfolio.example.com'
+      SITE_HOSTS='portfolio.example.com,www.portfolio.example.com'
     EOT
-    error_message = "The default .env (Neon database, local media) does not match the expected 23 lines."
+    error_message = "The default .env (Neon database, local media) does not match the expected 25 lines."
   }
   assert {
     condition     = !strcontains(nonsensitive(output.env_file), "MEDIA_LOCAL_DIR")
@@ -208,8 +210,8 @@ run "gcs_bucket_with_key" {
     error_message = "A gcs site must not get MEDIA_AZURE_ACCOUNT or MEDIA_AZURE_CONTAINER."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 24
-    error_message = "A gcs .env has the 23 default lines plus MEDIA_GCS_BUCKET: 24 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 26
+    error_message = "A gcs .env has the 25 default lines plus MEDIA_GCS_BUCKET: 26 lines."
   }
 }
 
@@ -253,8 +255,8 @@ run "azure_container_with_sas" {
     error_message = "An azure site must not get MEDIA_GCS_BUCKET."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 25
-    error_message = "An azure .env has the 23 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 25 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 27
+    error_message = "An azure .env has the 25 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 27 lines."
   }
 }
 
@@ -458,6 +460,101 @@ run "defaults_ipv4_only" {
     }
     error_message = "The webhook URLs must be the site's /api/webhooks/brevo and /api/webhooks/mailjet."
   }
+}
+
+# site_host on a subdomain: the records, Caddy and the site URL move to it,
+# with no www (www.profile... is rarely wanted). DOMAIN stays the zone, where
+# the mail records live.
+run "subdomain_site_host" {
+  command = plan
+
+  variables {
+    site_host = "Profile.Portfolio.Example.com"
+    vps_ipv6  = "2001:db8::10"
+  }
+
+  assert {
+    condition = output.site_records == [
+      { name = "profile.portfolio.example.com", type = "A", content = "203.0.113.10" },
+      { name = "profile.portfolio.example.com", type = "AAAA", content = "2001:db8::10" },
+    ]
+    error_message = "A subdomain site_host must get only its own A and AAAA records (lower-cased), no apex or www records."
+  }
+  assert {
+    condition     = output.site_url == "https://profile.portfolio.example.com"
+    error_message = "site_url must be https://<site_host>."
+  }
+  assert {
+    condition     = output.webhook_urls.brevo == "https://profile.portfolio.example.com/api/webhooks/brevo"
+    error_message = "The webhook URLs must use the site host."
+  }
+  assert {
+    condition = alltrue([for line in [
+      "DOMAIN='portfolio.example.com'",
+      "PUBLIC_SITE_URL='https://profile.portfolio.example.com'",
+      "SITE_ADDRESSES='profile.portfolio.example.com'",
+      "SITE_HOSTS='profile.portfolio.example.com'",
+    ] : contains(split("\n", nonsensitive(output.env_file)), line)])
+    error_message = "The .env must keep DOMAIN on the zone and point PUBLIC_SITE_URL, SITE_ADDRESSES and SITE_HOSTS at the subdomain."
+  }
+}
+
+# site_www = true on a subdomain adds www.<site_host> as a CNAME to it.
+run "subdomain_with_www" {
+  command = plan
+
+  variables {
+    site_host = "profile.portfolio.example.com"
+    site_www  = true
+  }
+
+  assert {
+    condition = output.site_records == [
+      { name = "profile.portfolio.example.com", type = "A", content = "203.0.113.10" },
+      { name = "www.profile.portfolio.example.com", type = "CNAME", content = "profile.portfolio.example.com" },
+    ]
+    error_message = "site_www = true must add the www CNAME to the subdomain."
+  }
+  assert {
+    condition     = contains(split("\n", nonsensitive(output.env_file)), "SITE_ADDRESSES='profile.portfolio.example.com www.profile.portfolio.example.com'")
+    error_message = "Caddy must serve both hostnames."
+  }
+}
+
+# site_www = false on the apex drops the www CNAME.
+run "apex_without_www" {
+  command = plan
+
+  variables {
+    site_www = false
+  }
+
+  assert {
+    condition     = output.site_records == [{ name = "portfolio.example.com", type = "A", content = "203.0.113.10" }]
+    error_message = "site_www = false must leave only the apex A record."
+  }
+}
+
+# A site_host outside the domain is refused: Terraform only manages the
+# Cloudflare zone of the domain.
+run "site_host_outside_domain" {
+  command = plan
+
+  variables {
+    site_host = "profile.other.example"
+  }
+
+  expect_failures = [var.site_host]
+}
+
+run "site_host_suffix_without_dot" {
+  command = plan
+
+  variables {
+    site_host = "notportfolio.example.com"
+  }
+
+  expect_failures = [var.site_host]
 }
 
 # vps_ipv6 adds an apex AAAA record between the A record and the www CNAME.

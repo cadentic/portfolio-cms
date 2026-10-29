@@ -86,13 +86,17 @@ the search, filter and sort parameters, CSV import/export, retention purges.
 
 Start with the one-page [DEPLOY.md](DEPLOY.md); full details are in
 [docs/deploy.md](docs/deploy.md). In short: create the Neon database and
-Firebase project yourself, copy `infra/terraform/secret.tfvars.example` to
-`secret.tfvars`, fill it in, then
+Firebase project yourself, then run `python3 installSetup.py`: it writes
+`infra/terraform/secret.tfvars` from flags and asks for anything missing
+(or copy `secret.tfvars.example` and fill it in by hand). Then
 
 ```sh
 cd infra/ansible
 ansible-playbook deploy.yml -e target=gcp     # or target=azure, or target=vps
 ```
+
+The site can live on `cadentic.dev` or on a subdomain such as
+`profile.cadentic.dev` (`site_host`); the email records stay on `cadentic.dev`.
 
 To move later (another cloud, a VPS, the database off Neon), see
 [tools/cloudmigrate](tools/cloudmigrate/README.md).
