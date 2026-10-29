@@ -308,7 +308,7 @@ func TestNormalize(t *testing.T) {
 			}
 		}})
 	}
-	for _, in := range []string{"https://vimeo.com/1", "gXT9izr0lj"} {
+	for _, in := range []string{"https://vimeo.com/1", "gXT9izr0lj", "https://www.youtube.com/watch?v=gXT9izr0ljQxyz"} {
 		cases = append(cases, tc{name: "bad youtube " + in, edit: func(c *Content) { c.Videos.Featured.YouTubeID = in },
 			path: "videos.featured.youtube_id", msg: "enter a YouTube link"})
 	}
@@ -323,8 +323,14 @@ func TestNormalize(t *testing.T) {
 		cases = append(cases, tc{name: "bad image " + in, edit: func(c *Content) { c.Organizations.Items[0].LogoURL = in },
 			path: "organizations.items[0].logo_url", msg: "choose an image from the media library"})
 	}
-	cases = append(cases, tc{name: "link", edit: func(c *Content) { c.Identity.LinkedInURL = "https://www.linkedin.com/in/x" }, path: "ok"})
-	for _, in := range []string{"http://linkedin.com/in/x", "javascript:alert(1)", "https://u:p@x.com", "linkedin.com/in/x", "https://", "https://x.com/a b"} {
+	for _, in := range []string{"https://www.linkedin.com/in/x", "https://ust.com:44330/careers", "https://münchen.de/", "https://example.com./x",
+		"https://[2001:db8::1]:8443/"} {
+		cases = append(cases, tc{name: "link " + in, edit: func(c *Content) { c.Identity.LinkedInURL = in }, path: "ok"})
+	}
+	for _, in := range []string{"http://linkedin.com/in/x", "javascript:alert(1)", "https://u:p@x.com", "linkedin.com/in/x", "https://", "https://x.com/a b",
+		// Addresses a browser cannot open, or where the text and the destination differ.
+		"https://evil.com:99999", "https://evil.com:0/", "https://evil.com\u200b.good.com", "https://x.com/\u2060a", "https://a..b.com",
+		"https://.x.com", "https://x!.com"} {
 		cases = append(cases, tc{name: "bad link " + in, edit: func(c *Content) { c.Identity.LinkedInURL = in },
 			path: "identity.linkedin_url", msg: "must be a full https:// address"})
 	}
@@ -525,6 +531,12 @@ func TestApplySections(t *testing.T) {
 		`{"about":{"visible":"yes"}}`:                `about.visible: must be true or false`,
 		`{"hero":{"metrics":{}}}`:                    `hero.metrics: must be a list`,
 		`{"videos":{"featured":"x"}}`:                `videos.featured: must be an object`,
+		// Type errors inside lists name the row, as Normalize's errors do.
+		`{"hero":{"metrics":[{"value":"1","label":"a"},{"value":1}]}}`:   `hero.metrics[1].value: must be text`,
+		`{"experience":{"roles":[{"title":"x","points":["a",2]}]}}`:      `experience.roles[0].points[1]: must be text`,
+		`{"organizations":{"items":[{"name":"A"},{"name":["B"]}]}}`:      `organizations.items[1].name: must be text`,
+		`{"videos":{"items":[{"title":"x"}],"featured":{"title":true}}}`: `videos.featured.title: must be text`,
+		`{"identity":{"experience_years":99999999999999999999}}`:         `identity.experience_years: must be a whole number`,
 	} {
 		_, errs := ApplySections(base, sections(t, in))
 		if got := (&ValidationError{Errors: errs}).Error(); got != want {
@@ -570,6 +582,25 @@ func TestApplySections(t *testing.T) {
 	c, errs = ApplySections(base, nil)
 	if len(errs) > 0 || !reflect.DeepEqual(c, base) {
 		t.Error("empty patch changed the document")
+	}
+
+	// null empties a text, number or true/false field, as it does a list, so
+	// the required rules apply instead of the old value silently staying.
+	c, errs = ApplySections(base, sections(t, `{"identity":{"experience_years":null},"hero":{"title":null,"eyebrow":null,"availability_visible":null}}`))
+	if len(errs) > 0 || c.Identity.ExperienceYears != 0 || c.Hero.Title != "" || c.Hero.Eyebrow != "" || c.Hero.AvailabilityVisible ||
+		c.Hero.Lead != base.Hero.Lead {
+		t.Fatalf("null: %v %+v", errs, c.Hero)
+	}
+	got := []string{}
+	for _, fe := range Normalize(&c) {
+		got = append(got, fe.String())
+	}
+	if !slices.Equal(got, []string{"identity.experience_years: must be between 1 and 60", "hero.title: required"}) {
+		t.Errorf("null fields: %v", got)
+	}
+	// A stored document is read leniently: a null there keeps the default.
+	if c, err := FromStored([]byte(`{"hero":{"title":null}}`)); err != nil || c.Hero.Title != base.Hero.Title {
+		t.Errorf("stored null: %q %v", c.Hero.Title, err)
 	}
 }
 

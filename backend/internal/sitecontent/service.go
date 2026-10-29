@@ -1,6 +1,7 @@
 package sitecontent
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -48,9 +49,12 @@ type Service struct {
 	TTL time.Duration // 5s in production, 0 in tests
 	Log *slog.Logger
 
-	mu   sync.Mutex
-	cur  *snapshot // cache; nil when expired by a write
-	last *snapshot // last good load, served when the database fails
+	mu      sync.Mutex
+	cur     *snapshot     // cache; nil when expired by a write
+	last    *snapshot     // last good load, served when the database fails
+	failed  time.Time     // when failErr happened
+	failErr error         // the last failed read; nil after a good read or a write
+	refresh time.Duration // test hook for refreshTimeout
 }
 
 type snapshot struct {
@@ -62,9 +66,15 @@ type snapshot struct {
 }
 
 const (
-	lockID         = 7262411002
 	keepVersions   = 200
 	msgMediaAbsent = "choose an image from the media library (this file is not in it)"
+
+	// While a last good copy can be served instead, a read may take at most
+	// refreshTimeout, and a failed read is not retried for retryAfter: the
+	// callers queued behind it get the last good copy at once instead of each
+	// waiting for a slow or hung database in turn (D10).
+	refreshTimeout = 2 * time.Second
+	retryAfter     = time.Second
 )
 
 var errNoWrite = errors.New("sitecontent: nothing to write")
@@ -78,12 +88,37 @@ func (s *Service) log() *slog.Logger {
 
 // load returns the cached snapshot or reads a fresh one. Holding mu across
 // the read means a write's cache clear can never be overtaken by an older read.
-func (s *Service) load(ctx context.Context) (*snapshot, error) {
+// canStale is set by callers that serve the last good copy when this fails;
+// for them the read is bounded by refreshTimeout and a recent failure is
+// returned without reading again.
+func (s *Service) load(ctx context.Context, canStale bool) (*snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cur != nil && s.TTL > 0 && time.Since(s.cur.at) < s.TTL {
 		return s.cur, nil
 	}
+	caller := ctx
+	if canStale && s.last != nil {
+		if s.failErr != nil && time.Since(s.failed) < retryAfter {
+			return nil, s.failErr
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cmp.Or(s.refresh, refreshTimeout))
+		defer cancel()
+	}
+	snap, err := s.read(ctx)
+	if err != nil {
+		if caller.Err() == nil { // not a request that went away
+			s.failed, s.failErr = time.Now(), err
+		}
+		return nil, err
+	}
+	s.cur, s.last, s.failErr = snap, snap, nil
+	return snap, nil
+}
+
+// read loads the stored document and builds its public view.
+func (s *Service) read(ctx context.Context) (*snapshot, error) {
 	raw, meta, found, err := settings.Raw(ctx, s.DB, Key)
 	if err != nil {
 		return nil, err
@@ -108,19 +143,18 @@ func (s *Service) load(ctx context.Context) (*snapshot, error) {
 	if found {
 		snap.doc.UpdatedAt, snap.doc.UpdatedBy = &meta.UpdatedAt, &meta.UpdatedBy
 	}
-	s.cur, s.last = snap, snap
 	return snap, nil
 }
 
 func (s *Service) invalidate() {
 	s.mu.Lock()
-	s.cur = nil
+	s.cur, s.failErr = nil, nil
 	s.mu.Unlock()
 }
 
 // Get returns the raw stored document ({years} kept, missing media kept).
 func (s *Service) Get(ctx context.Context) (Doc, error) {
-	snap, err := s.load(ctx)
+	snap, err := s.load(ctx, false)
 	if err != nil {
 		return Doc{}, err
 	}
@@ -129,10 +163,11 @@ func (s *Service) Get(ctx context.Context) (Doc, error) {
 
 // Public returns the public JSON body and its strong ETag (quoted, ready for
 // the header). When the database fails it serves the last good body with
-// stale=true and logs the error; with none it returns the error. The body is
-// shared: callers must not modify it.
+// stale=true and logs the error; with none it returns the error. A slow
+// database delays it by at most refreshTimeout once a good copy exists. The
+// body is shared: callers must not modify it.
 func (s *Service) Public(ctx context.Context) (body []byte, etag string, stale bool, err error) {
-	snap, err := s.load(ctx)
+	snap, err := s.load(ctx, true)
 	if err == nil {
 		return snap.body, snap.etag, false, nil
 	}
@@ -149,7 +184,7 @@ func (s *Service) Public(ctx context.Context) (body []byte, etag string, stale b
 // PublicContent is the public view as a value, for llms.txt, the resume
 // file name and the default author.
 func (s *Service) PublicContent(ctx context.Context) (Content, error) {
-	snap, err := s.load(ctx)
+	snap, err := s.load(ctx, false)
 	if err != nil {
 		return Content{}, err
 	}
@@ -177,7 +212,7 @@ func (s *Service) Apply(ctx context.Context, p Patch, actor string, dryRun bool)
 	}
 	var res Result
 	err := store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(lockID)); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, store.LockSiteContent); err != nil {
 			return err
 		}
 		raw, meta, found, err := settings.Raw(ctx, tx, Key)
@@ -206,6 +241,9 @@ func (s *Service) Apply(ctx context.Context, p Patch, actor string, dryRun bool)
 		if len(errs) > 0 {
 			return &ValidationError{Errors: errs}
 		}
+		// Error paths index the lists as they were sent, before Normalize
+		// drops blank rows.
+		sent := clone(next)
 		if errs := Normalize(&next); len(errs) > 0 {
 			return &ValidationError{Errors: errs}
 		}
@@ -223,8 +261,8 @@ func (s *Service) Apply(ctx context.Context, p Patch, actor string, dryRun bool)
 			for _, u := range LocalMedia(cur) {
 				stored[u] = true
 			}
-			for _, im := range images(&next) {
-				if missing[*im.value] && !stored[*im.value] {
+			for _, im := range images(&sent) {
+				if u := clean(*im.value); missing[u] && !stored[u] {
 					errs = append(errs, FieldError{Path: im.path, Message: msgMediaAbsent})
 				}
 			}

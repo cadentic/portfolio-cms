@@ -72,7 +72,8 @@ export class AdminLayoutComponent {
   }
 
   async logout() {
+    // Leave first, so the unsaved-changes guard can stop us while the session still works.
+    if (!(await this.router.navigateByUrl('/admin/login'))) return;
     await this.auth.logout();
-    this.router.navigateByUrl('/admin/login');
   }
 }

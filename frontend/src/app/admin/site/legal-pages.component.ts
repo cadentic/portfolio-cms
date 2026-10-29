@@ -35,7 +35,10 @@ interface Row {
       record the new version.
     </p>
     @if (error()) {
-      <p class="a-err" role="alert">{{ error() }}</p>
+      <div class="a-err" role="alert">
+        <p style="margin:0 0 8px;color:inherit">Could not load the legal pages: {{ error() }}</p>
+        <button class="ab sm" type="button" (click)="load()">Try again</button>
+      </div>
     }
     @if (notice()) {
       <p class="a-ok" role="status">{{ notice() }}</p>
@@ -98,14 +101,23 @@ interface Row {
                     {{ r.name }}<br /><span class="a-muted a-mono">/{{ r.slug }}</span>
                   </td>
                   <td colspan="3" class="a-muted">
-                    Not set up yet. The API creates this page when it starts after the update;
-                    reload this screen in a minute.
+                    This page is missing. Create a page with the URL slug “{{ r.slug }}” and publish
+                    it; it is protected like the others.
+                    <a
+                      class="ab sm"
+                      routerLink="/admin/content/new"
+                      [queryParams]="{ kind: 'page', slug: r.slug, title: r.name }"
+                      [attr.aria-label]="'Create ' + r.name"
+                      >Create page</a
+                    >
                   </td>
                 }
               </tr>
             } @empty {
               <tr>
-                <td colspan="4" class="a-muted">Loading…</td>
+                <td colspan="4" class="a-muted">
+                  {{ error() ? 'Not loaded.' : 'Loading…' }}
+                </td>
               </tr>
             }
           </tbody>
@@ -133,6 +145,7 @@ export class LegalPagesComponent {
     this.load();
   }
   load() {
+    this.error.set('');
     const find = (slug: string) =>
       this.api.get<{ items: Page[] }>('pages', { kind: 'page', q: slug, limit: 50 });
     forkJoin(LEGAL.map((l) => find(l.slug))).subscribe({

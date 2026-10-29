@@ -12,6 +12,9 @@ import {
   input,
   output,
 } from '@angular/core';
+import { SiteDraft } from './site-draft.service';
+
+const FIRST_FIELD = 'input:not([type="file"]), textarea';
 
 /**
  * Rows of a list with add, remove and move. The rows are edited in place, so
@@ -79,7 +82,10 @@ import {
 export class ListEditorComponent<T = unknown> {
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
   private injector = inject(Injector);
+  private draft = inject(SiteDraft);
   readonly items = input.required<T[]>();
+  /** The list's document path, e.g. "hero.metrics": server messages follow their row. */
+  readonly path = input('');
   readonly max = input(Infinity);
   /** Lower case, e.g. "metric": "+ Add metric", "Move metric 2 up". */
   readonly itemName = input.required<string>();
@@ -100,16 +106,25 @@ export class ListEditorComponent<T = unknown> {
     this.items().push(this.newItem()());
     this.changed.emit();
     // Put the cursor in the new row's first field.
-    this.focusLater(this.items().length - 1, 'input, textarea');
+    this.focusLater(this.items().length - 1, FIRST_FIELD);
   }
   remove(i: number) {
-    this.items().splice(i, 1);
+    const xs = this.items();
+    this.moved([...xs.keys()].filter((k) => k !== i));
+    xs.splice(i, 1);
     this.changed.emit();
+    // Into the row that took its place, not onto that row's Remove button (Enter would remove it
+    // too); the Add button when none are left.
+    if (xs.length) this.focusLater(Math.min(i, xs.length - 1), FIRST_FIELD);
+    else this.focusLater(null, ':scope > .a-row > button');
   }
   move(i: number, dir: number) {
     const xs = this.items();
     const j = i + dir;
     if (j < 0 || j >= xs.length) return;
+    const from = [...xs.keys()];
+    [from[i], from[j]] = [j, i];
+    this.moved(from);
     [xs[i], xs[j]] = [xs[j], xs[i]];
     this.changed.emit();
     // Keep focus on the moved row, so pressing ↑ again moves it further.
@@ -122,11 +137,18 @@ export class ListEditorComponent<T = unknown> {
     );
   }
 
-  private focusLater(row: number, selector: string) {
+  private moved(from: number[]) {
+    if (this.path()) this.draft.moveRows(this.path(), from);
+  }
+
+  /** Focuses `selector` in row `row`, or in the whole list editor when `row` is null. */
+  private focusLater(row: number | null, selector: string) {
     afterNextRender(
       () => {
-        const rows = this.host.nativeElement.querySelectorAll(':scope > .a-list-rows > fieldset');
-        rows[row]?.querySelector<HTMLElement>(selector)?.focus();
+        const host = this.host.nativeElement;
+        const rows = host.querySelectorAll(':scope > .a-list-rows > fieldset');
+        const scope = row === null ? host : rows[row];
+        scope?.querySelector<HTMLElement>(selector)?.focus();
       },
       { injector: this.injector },
     );

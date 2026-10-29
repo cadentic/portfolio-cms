@@ -263,9 +263,9 @@ var toolDefs = []map[string]any{
 	{"name": "update_site_content", "title": "Update site content",
 		"description": "Change the public site content (home page text, profile and links, organisations with logos, videos, FAQ, " +
 			"SEO text). Send only the fields you want to change inside a section; a list or nested object you send replaces the " +
-			"whole list or object, so send lists complete. Use {years} where the years of experience should appear; it is " +
-			"replaced by identity.experience_years. YouTube links are converted to video IDs. Images must already be in the " +
-			"media library (/media/…); external image URLs are refused. Use dry_run to validate without saving, and " +
+			"whole list or object, so send lists complete; null empties a field. Use {years} where the years of experience " +
+			"should appear; it is replaced by identity.experience_years. YouTube links are converted to video IDs. Images " +
+			"must already be in the media library (/media/…); external image URLs are refused. Use dry_run to validate without saving, and " +
 			"base_updated_at from get_site_content to avoid overwriting the owner's edits. Changes are live within a minute, " +
 			"versioned and recorded in the audit log.",
 		"inputSchema": schema(map[string]any{
@@ -392,6 +392,9 @@ func (s *Server) call(ctx context.Context, name string, args json.RawMessage) (a
 			Notify bool   `json:"notify_subscribers"`
 		}
 		_ = json.Unmarshal(args, &x)
+		if err := s.guardLegal(ctx, x.ID); err != nil {
+			return nil, err
+		}
 		res, err := s.Content.Publish(ctx, x.ID)
 		if err != nil {
 			return nil, err

@@ -3,7 +3,6 @@ import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalE
 import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions } from '@angular/platform-browser';
 import { provideRouter, withComponentInputBinding, withInMemoryScrolling, withRouterConfig } from '@angular/router';
 import { routes } from './app.routes';
-import { apiOriginInterceptor } from './core/api-origin.interceptor';
 import { adminAuthInterceptor } from './admin/auth.interceptor';
 import { SiteContentService } from './core/site-content.service';
 import { SITE_URL } from './core/tokens';
@@ -14,7 +13,8 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding(),
       withInMemoryScrolling({ anchorScrolling: 'enabled', scrollPositionRestoration: 'enabled' }),
       withRouterConfig({ onSameUrlNavigation: 'reload' })),
-    provideHttpClient(withFetch(), withInterceptors([apiOriginInterceptor, adminAuthInterceptor])),
+    // On the server, ServerApiBackend (app.config.server.ts) sends these calls to the API.
+    provideHttpClient(withFetch(), withInterceptors([adminAuthInterceptor])),
     provideClientHydration(withEventReplay(), withHttpTransferCacheOptions({ includePostRequests: false })),
     // Site content is loaded before the first render, so SSR output carries it (D14).
     provideAppInitializer(() => inject(SiteContentService).load()),

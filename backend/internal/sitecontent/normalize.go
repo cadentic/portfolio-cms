@@ -8,8 +8,10 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/cadentic/portfolio-cms/backend/internal/content"
@@ -421,12 +423,35 @@ func blank(v reflect.Value) bool {
 	return true
 }
 
+// httpsURL accepts an https address a browser can open. url.Parse leaves the
+// port range and host labels unchecked, and invisible format characters (a
+// zero-width space, say) would make the saved text differ from where the link
+// goes.
 func httpsURL(s string) bool {
-	if strings.ContainsAny(s, " \\") {
+	if strings.ContainsAny(s, " \\") || strings.ContainsFunc(s, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) {
 		return false
 	}
 	u, err := url.Parse(s)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return false
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	host := u.Hostname()
+	if strings.Contains(host, ":") { // an IPv6 literal, which url.Parse checks
+		return true
+	}
+	for _, label := range strings.Split(strings.TrimSuffix(host, "."), ".") {
+		if label == "" || strings.ContainsFunc(label, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsMark(r) && r != '-' && r != '_'
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 func localImage(s string) bool {

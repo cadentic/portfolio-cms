@@ -375,14 +375,17 @@ export interface Match {
 }
 
 const CONTEXT = 30;
-// Links, IDs and dates are never text to replace.
+// Links, IDs, dates and the country code are never text to replace.
 const skipKey = (k: Key) =>
   typeof k === 'string' &&
   (k === 'url' ||
     k.endsWith('_url') ||
     k === 'youtube_id' ||
     k === 'youtube_handle' ||
-    k === 'published_on');
+    k === 'published_on' ||
+    k === 'country_code');
+// Placeholders such as {years} (D11): found and replaced whole, never in part.
+const PLACEHOLDER = /\{[A-Za-z_]+\}/g;
 const wordChar = /[\p{L}\p{N}_]/u;
 const isWord = (ch: string | undefined) => ch !== undefined && wordChar.test(ch);
 
@@ -395,15 +398,21 @@ export function findMatches(content: SiteContent, find: string, opts: FindOption
   );
   const out: Match[] = [];
   const scan = (s: string, path: string) => {
+    const placeholders = [...s.matchAll(PLACEHOLDER)].map((p) => {
+      const at = p.index ?? 0;
+      return [at, at + p[0].length] as const;
+    });
     re.lastIndex = 0;
     for (let m = re.exec(s); m; m = re.exec(s)) {
       const start = m.index;
       const end = start + m[0].length;
       // Whole word: the match must not continue a word on either side ("11" never matches "11g").
+      // A match may cover a placeholder, but not cut into one ("years" never matches "{years}").
       if (
-        opts.wholeWord &&
-        ((isWord(s[start - 1]) && isWord(m[0][0])) ||
-          (isWord(s[end]) && isWord(m[0][m[0].length - 1])))
+        (opts.wholeWord &&
+          ((isWord(s[start - 1]) && isWord(m[0][0])) ||
+            (isWord(s[end]) && isWord(m[0][m[0].length - 1])))) ||
+        placeholders.some(([a, b]) => start < b && end > a && !(start <= a && end >= b))
       ) {
         re.lastIndex = start + 1;
         continue;
@@ -462,6 +471,24 @@ export function replaceMatches(
     }
   }
   return { occurrences, fields };
+}
+
+// ---- Rows removed or moved ----
+
+/**
+ * Messages after rows of the list at `list` were removed or moved: `from[k]` is the old index
+ * of the row now at k. A message follows its row; one about a removed row is dropped.
+ */
+export function remapRows(messages: FieldError[], list: string, from: number[]): FieldError[] {
+  const to = new Map(from.map((old, k) => [old, k]));
+  const prefix = list + '[';
+  return messages.flatMap((e) => {
+    const m = e.path.startsWith(prefix) ? /^(\d+)\]/.exec(e.path.slice(prefix.length)) : null;
+    if (!m) return [e];
+    const k = to.get(Number(m[1]));
+    if (k === undefined) return [];
+    return [{ ...e, path: prefix + k + e.path.slice(prefix.length + m[1].length) }];
+  });
 }
 
 // ---- Blank rows for <app-list-editor [newItem]> ----

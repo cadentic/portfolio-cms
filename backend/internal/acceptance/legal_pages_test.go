@@ -58,10 +58,18 @@ func TestLegalPages(t *testing.T) {
 		t.Fatalf("privacy table missing or changed by sanitising: %q", table)
 	}
 	ai := e.Str(`SELECT blocks::text FROM cms_pages WHERE id=$1`, ids["ai-policy"])
-	for _, want := range []string{"**Content management.** I can create and update draft pages", "nothing is published or mailed without my approval",
-		"[privacy notice](/privacy)", "please attribute \\\"Sayantan Chakraborty\\\""} {
+	for _, want := range []string{"**Content management.** I can create and edit pages, articles and site text",
+		"can't send email to subscribers or change these legal pages", "every change it makes is recorded in an audit log",
+		"Newsletters go out only after I approve them in the CMS", "[privacy notice](/privacy)", "please attribute \\\"Sayantan Chakraborty\\\""} {
 		if !strings.Contains(ai, want) {
 			t.Fatalf("AI policy lacks %q", want)
+		}
+	}
+	// The old bullet promised that nothing is published without approval,
+	// which MCP site-content edits (live at once) would make untrue.
+	for _, gone := range []string{"update draft pages", "nothing is published"} {
+		if strings.Contains(ai, gone) {
+			t.Fatalf("AI policy still says %q", gone)
 		}
 	}
 	if n := e.Count(`SELECT count(*) FROM content_versions WHERE entity_type='page' AND action='seed' AND actor='migration'`); n != 3 {
@@ -93,6 +101,14 @@ func TestLegalPages(t *testing.T) {
 	}
 	if p := getPage(t, e, privacy); p.Status != "published" || p.Slug != "privacy" || p.ParentID != nil || !p.UpdatedAt.Equal(seeded) {
 		t.Fatalf("privacy page changed: %+v", p)
+	}
+	// Publishing a page that is already published changes nothing, so its
+	// "Last updated" date stays with its last recorded version.
+	if r := e.Admin("POST", "/api/admin/pages/"+privacy+"/publish", nil); r.Status != 200 {
+		t.Fatalf("re-publish: %d %s", r.Status, r.Body)
+	}
+	if p := getPage(t, e, privacy); !p.UpdatedAt.Equal(seeded) || !p.PublishedAt.Equal(seeded) {
+		t.Fatalf("re-publish moved the dates: %v %v", p.UpdatedAt, p.PublishedAt)
 	}
 	// Other pages keep the old behaviour, and unknown ids are 404.
 	if r := e.Admin("POST", "/api/admin/pages/"+otherID+"/unpublish", nil); r.Status != 200 {
@@ -164,12 +180,38 @@ func TestLegalPages(t *testing.T) {
 	if v := pageVersions(t, e, privacy); len(v) != 3 || v[0].Action != "restore" {
 		t.Fatalf("versions after restore = %+v", v)
 	}
-	if e.Count(`SELECT count(*) FROM email_audit_logs WHERE action='page.restore' AND entity_id=$1`, privacy) != 1 {
-		t.Fatal("restore not audited")
+	if got := e.Str(`SELECT details->>'changed' FROM email_audit_logs WHERE action='page.restore' AND entity_id=$1`, privacy); got != `["blocks"]` {
+		t.Fatalf("restore audit changed = %s", got)
+	}
+	// Restoring the text the page already has records nothing.
+	if r := e.Admin("POST", "/api/admin/pages/"+privacy+"/versions/"+testenv.Sprint(seed.ID)+"/restore", nil); r.Status != 200 {
+		t.Fatalf("no-op restore: %d %s", r.Status, r.Body)
+	}
+	if len(pageVersions(t, e, privacy)) != 3 || !getPage(t, e, privacy).UpdatedAt.Equal(restored.UpdatedAt) ||
+		e.Count(`SELECT count(*) FROM email_audit_logs WHERE action='page.restore' AND entity_id=$1`, privacy) != 1 {
+		t.Fatal("a no-op restore was versioned or audited")
 	}
 	if r := e.Admin("POST", "/api/admin/pages/"+privacy+"/versions/999999/restore", nil); r.Status != 404 {
 		t.Fatalf("unknown version: %d", r.Status)
 	}
+	// A version the editor would reject is the owner's to fix (400); an
+	// unreadable one is a server fault (500), not the raw error.
+	invalid := e.Str(`INSERT INTO content_versions (entity_type, entity_id, action, snapshot, sha256, actor)
+		VALUES ('page', $1, 'update', '{"title":"Privacy notice","hero":{"type":"hologram"}}', 'x', 'test') RETURNING id::text`, privacy)
+	if r := e.Admin("POST", "/api/admin/pages/"+privacy+"/versions/"+invalid+"/restore", nil); r.Status != 400 ||
+		!strings.Contains(r.Map()["error"].(string), "unknown hero type") {
+		t.Fatalf("invalid version: %d %s", r.Status, r.Body)
+	}
+	broken := e.Str(`INSERT INTO content_versions (entity_type, entity_id, action, snapshot, sha256, actor)
+		VALUES ('page', $1, 'update', '[1]', 'x', 'test') RETURNING id::text`, privacy)
+	if r := e.Admin("POST", "/api/admin/pages/"+privacy+"/versions/"+broken+"/restore", nil); r.Status != 500 ||
+		strings.Contains(string(r.Body), "unmarshal") {
+		t.Fatalf("unreadable version: %d %s", r.Status, r.Body)
+	}
+	if e.Count(`SELECT count(*) FROM email_audit_logs WHERE action='page.restore' AND entity_id=$1`, privacy) != 1 {
+		t.Fatal("a failed restore was audited")
+	}
+	e.Exec(`DELETE FROM content_versions WHERE id IN ($1::bigint, $2::bigint)`, invalid, broken)
 
 	// The slugs are no longer reserved, but stay unique.
 	if r := e.Admin("POST", "/api/admin/pages", map[string]any{"kind": "page", "title": "Terms", "slug": "terms"}); r.Status != 400 ||

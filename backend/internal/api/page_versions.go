@@ -54,15 +54,25 @@ func (s *Server) restorePageVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, versions.ErrNotFound.Error())
 		return
 	}
-	p, err := s.Content.RestoreVersion(r.Context(), r.PathValue("id"), vid, actor(r))
+	p, changed, err := s.Content.RestoreVersion(r.Context(), r.PathValue("id"), vid, actor(r))
+	var invalid *content.InvalidError
 	switch {
 	case errors.Is(err, versions.ErrNotFound), errors.Is(err, content.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 		return
-	case err != nil:
+	case errors.Is(err, content.ErrProtected):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case errors.As(err, &invalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	case err != nil:
+		s.internal(w, r, err)
+		return
 	}
-	s.audit(r, "page.restore", "page", p.ID, map[string]any{"version_id": vid})
+	// Restoring the text the page already has writes no version; nor is it audited.
+	if len(changed) > 0 {
+		s.audit(r, "page.restore", "page", p.ID, map[string]any{"version_id": vid, "changed": changed})
+	}
 	writeJSON(w, http.StatusOK, p)
 }

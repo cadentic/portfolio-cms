@@ -48,11 +48,32 @@ test('home renders the editable site content', async ({ request }) => {
   }
 });
 
-test('hydration does not refetch site content', async ({ page }) => {
-  const urls: string[] = [];
-  page.on('request', (r) => urls.push(r.url()));
-  await page.goto('/', { waitUntil: 'networkidle' });
-  expect(urls.filter((u) => u.includes('/api/public/site-content'))).toEqual([]);
+// The browser reuses what the server fetched, so a page never flips to "Loading…" (or to
+// "Temporarily unavailable") after it has been rendered, and the section numbers stay put.
+for (const path of ['/', '/privacy', '/blog']) {
+  test(`hydration of ${path} does not refetch from the API`, async ({ page }) => {
+    const urls: string[] = [];
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.startsWith('/api/')) urls.push(r.url());
+    });
+    await page.goto(path, { waitUntil: 'networkidle' });
+    expect(urls).toEqual([]);
+  });
+}
+
+test('"Try again" on the unavailable page stays on this site', async ({ page, baseURL }) => {
+  // The page's own read fails as if the API were down.
+  await page.route((u) => u.pathname.startsWith('/api/public/pages/'), (r) =>
+    r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' }));
+  // Decoded, the first segment starts with a backslash, "//" or a tab and "/": browsers read each
+  // as a link to another site.
+  for (const path of ['/%5Cevil.example%23%00', '/%2F%2Fevil.example%23%00', '/%09%2Fevil.example%23%00']) {
+    await page.goto(path);
+    const retry = page.getByRole('link', { name: 'Try again' });
+    await expect(retry).toBeVisible();
+    const href = (await retry.getAttribute('href'))!;
+    expect(new URL(href, baseURL + '/x').origin, href).toBe(new URL(baseURL!).origin);
+  }
 });
 
 test('legal pages are CMS pages in the sitemap', async ({ request }) => {

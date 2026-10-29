@@ -1,9 +1,10 @@
-import { DatePipe, formatDate } from '@angular/common';
+import { DOCUMENT, DatePipe, formatDate } from '@angular/common';
 import {
   Component,
   ElementRef,
   Injector,
   LOCALE_ID,
+  OnDestroy,
   OnInit,
   afterNextRender,
   inject,
@@ -71,6 +72,9 @@ const ACTIONS: Record<ContentVersion['action'], string> = {
           <h2 id="hist-t" style="margin:0">History{{ title() ? ': ' + title() : '' }}</h2>
           <button class="ab sm" type="button" (click)="closed.emit()" aria-label="Close">✕</button>
         </div>
+        @if (error()) {
+          <p class="a-err" role="alert" style="margin:0">{{ error() }}</p>
+        }
         @if (viewing(); as v) {
           <div class="a-row between">
             <span class="a-muted">Version from {{ v.created_at | date: 'd MMM y, HH:mm' }}</span>
@@ -105,13 +109,15 @@ const ACTIONS: Record<ContentVersion['action'], string> = {
             }
           </p>
           @if (dirty()) {
-            <p class="a-warn" style="margin:0">
-              Save or discard your changes first: restoring is turned off while you have unsaved
-              changes.
-            </p>
-          }
-          @if (error()) {
-            <p class="a-err" role="alert" style="margin:0">{{ error() }}</p>
+            <div class="a-warn a-row between" style="margin:0">
+              <span>
+                Save or discard your changes first: restoring is turned off while you have unsaved
+                changes.
+              </span>
+              <button class="ab sm" type="button" (click)="discardRequested.emit()">
+                Discard changes
+              </button>
+            </div>
           }
           <div class="a-table-wrap">
             <table class="a-table">
@@ -189,8 +195,9 @@ const ACTIONS: Record<ContentVersion['action'], string> = {
     </div>
   `,
 })
-export class HistoryDialogComponent implements OnInit {
+export class HistoryDialogComponent implements OnInit, OnDestroy {
   private api = inject(AdminApi);
+  private doc = inject(DOCUMENT);
   private auth = inject(AuthService);
   private locale = inject(LOCALE_ID);
   private injector = inject(Injector);
@@ -200,6 +207,8 @@ export class HistoryDialogComponent implements OnInit {
   /** Unsaved changes in the editor: restoring would silently drop them. */
   readonly dirty = input(false);
   readonly baseUpdatedAt = input<string | null>(null);
+  /** The owner asked to drop the unsaved changes; the editor confirms and reloads. */
+  readonly discardRequested = output<void>();
   readonly siteRestored = output<{ doc: SiteContentAdminDoc; label: string }>();
   readonly pageRestored = output<Page>();
   readonly closed = output<void>();
@@ -209,8 +218,11 @@ export class HistoryDialogComponent implements OnInit {
   readonly busy = signal(false);
   readonly ACTIONS = ACTIONS;
   private dialog = viewChild.required<ElementRef<HTMLElement>>('dialog');
+  /** Gets focus back on close, usually the History button. */
+  private opener: Element | null = null;
 
   ngOnInit() {
+    this.opener = this.doc.activeElement;
     afterNextRender(() => this.dialog().nativeElement.focus(), { injector: this.injector });
     this.api.get<{ items: ContentVersion[] }>(this.base(), { limit: 200 }).subscribe({
       next: (r) => this.versions.set(r.items ?? []),
@@ -219,6 +231,9 @@ export class HistoryDialogComponent implements OnInit {
         this.error.set(errMsg(e));
       },
     });
+  }
+  ngOnDestroy() {
+    (this.opener as HTMLElement | null)?.focus?.();
   }
   private base() {
     return this.pageId() ? `pages/${this.pageId()}/versions` : 'site-content/versions';

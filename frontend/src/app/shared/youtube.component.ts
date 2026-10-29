@@ -49,4 +49,8 @@ export class YoutubeComponent {
     return this.sanitizer.bypassSecurityTrustResourceUrl(`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`);
   });
 
+  constructor() {
+    // The placeholder's text is site content, which the admin (the page editor's preview) doesn't load up front.
+    this.site.ensureLoaded();
+  }
 }

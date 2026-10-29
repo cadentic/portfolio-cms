@@ -1,6 +1,8 @@
 -- Legal pages become CMS pages (edited in Admin → Site content → Legal pages). The text is
 -- the version published on 28 October 2026 (frontend legal.component.ts at 4c14b3e), as
--- blocks: links and bold become inline Markdown and the privacy table one html block.
+-- blocks: links and bold become inline Markdown and the privacy table one html block. One
+-- change: the AI policy "Content management" bullet now also covers pages, articles and site
+-- text edited through MCP, which go live without a separate approval step.
 -- Idempotent: ON CONFLICT DO NOTHING covers UNIQUE (kind, slug) and cms_pages_source_uq, and a
 -- seed version is written only for a page this statement created.
 WITH ins AS (
@@ -46,7 +48,7 @@ WITH ins AS (
   ('page', 'ai-policy', 'AI policy', '', '{"type":"none"}', $aipolicy$[
   {"type": "paragraph", "text": "This page explains how artificial intelligence is used on and around this site, and what I ask of AI systems that read it."},
   {"type": "heading", "level": 2, "text": "How I use AI"},
-  {"type": "list", "style": "bullet", "items": ["**Writing assistance.** I sometimes use AI tools to draft, outline or proofread articles. Every published article is reviewed, tested and edited by me, and I am responsible for its accuracy.", "**Content management.** I can create and update draft pages through an AI assistant connected to this site's CMS (Model Context Protocol). The connection requires my sign-in, can't send email to subscribers, and nothing is published or mailed without my approval.", "**No automated decisions about you.** AI is not used to profile subscribers, make decisions about visitors, or process your personal data beyond the purposes in the [privacy notice](/privacy).", "**Commands and code.** Database commands in articles are tested by me; AI-generated snippets are labelled when they haven't been run against a real system."]},
+  {"type": "list", "style": "bullet", "items": ["**Writing assistance.** I sometimes use AI tools to draft, outline or proofread articles. Every published article is reviewed, tested and edited by me, and I am responsible for its accuracy.", "**Content management.** I can create and edit pages, articles and site text through an AI assistant connected to this site's CMS (Model Context Protocol). It acts only on my instructions, requires my sign-in, can't send email to subscribers or change these legal pages, and every change it makes is recorded in an audit log. Newsletters go out only after I approve them in the CMS.", "**No automated decisions about you.** AI is not used to profile subscribers, make decisions about visitors, or process your personal data beyond the purposes in the [privacy notice](/privacy).", "**Commands and code.** Database commands in articles are tested by me; AI-generated snippets are labelled when they haven't been run against a real system."]},
   {"type": "heading", "level": 2, "text": "AI crawlers and answer engines"},
   {"type": "paragraph", "text": "Search and answer engines (including AI assistants) may read and cite public articles. A machine-readable summary is at [/llms.txt](/llms.txt), and permissions are in [/robots.txt](/robots.txt). When you quote or summarise content, please attribute \"Sayantan Chakraborty\" and link to the original article. The admin area, APIs and personal data are excluded and must not be crawled."},
   {"type": "heading", "level": 2, "text": "Training"},

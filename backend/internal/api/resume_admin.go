@@ -30,7 +30,6 @@ import (
 const (
 	resumeSettingKey = "resume"
 	resumeMaxBytes   = 10 << 20
-	resumeLockID     = 7262411003 // serialises uploads and deletes
 )
 
 func (s *Server) resumeRoutes(m *http.ServeMux) {
@@ -233,7 +232,7 @@ func (s *Server) uploadResume(w http.ResponseWriter, r *http.Request) {
 	var prev resumeSetting
 	var hadPrev bool
 	err = store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(resumeLockID)); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, store.LockResume); err != nil {
 			return err
 		}
 		var err error
@@ -283,7 +282,7 @@ func (s *Server) deleteResume(w http.ResponseWriter, r *http.Request) {
 	var rs resumeSetting
 	var found bool
 	err := store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(resumeLockID)); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, store.LockResume); err != nil {
 			return err
 		}
 		var err error

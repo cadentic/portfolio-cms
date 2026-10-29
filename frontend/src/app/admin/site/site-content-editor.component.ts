@@ -65,7 +65,11 @@ const H = {
     'Used wherever the text says {years}: the hero, key numbers, About, FAQ, search description and llms.txt.',
   yearsProfile:
     'Type the number once. Wherever your text says {years} (hero, key numbers, About, FAQ, search description and llms.txt), the site shows this number instead. It is the same field as Home page → Hero & key numbers → Years of experience.',
-  label: 'Shown after the section number, e.g. “01 / About”, and in the menu and footer.',
+  label: 'Shown after the section number above the heading, e.g. “01 / About”.',
+  labelNav:
+    'Shown after the section number above the heading, e.g. “01 / About”, and as the link in the menu and the footer site map.',
+  labelFooter:
+    'Shown after the section number above the heading, e.g. “01 / About”, and as the link in the footer site map.',
   metricValue: 'Short, e.g. “{years}+ years” or “99.99%”.',
   handle: 'Shown next to YouTube links, e.g. @csayantan. The @ is added if you leave it out.',
   handlePlaceholder: '@yourhandle',
@@ -108,6 +112,9 @@ const H = {
         </button>
         @if (dirty()) {
           <span class="pill pending">Unsaved changes</span>
+          <button class="ab" type="button" [disabled]="busy()" (click)="discardChanges()">
+            Discard changes
+          </button>
         }
         <button class="ab" type="button" [disabled]="!doc()" (click)="historyOpen.set(true)">
           History
@@ -192,9 +199,9 @@ const H = {
       </ng-template>
 
       @if (matches(); as ms) {
-        <div class="a-card a-find" role="status">
+        <div class="a-card a-find" [attr.inert]="resetting() ? '' : null">
           <div class="a-row between">
-            <strong>
+            <strong role="status">
               @if (ms.length) {
                 {{ ms.length }} {{ ms.length === 1 ? 'match' : 'matches' }} for “{{ findFor() }}” in
                 all site content
@@ -259,6 +266,7 @@ const H = {
           ngNoForm
           novalidate
           class="a-sec-list"
+          [attr.inert]="resetting() ? '' : null"
           (submit)="$event.preventDefault()"
           (input)="onEdit($event)"
           (change)="onEdit($event)"
@@ -375,6 +383,7 @@ const H = {
                     <p class="a-hint">Shown in the card next to the headline, under your photo.</p>
                     <app-list-editor
                       [items]="c.hero.metrics"
+                      path="hero.metrics"
                       [max]="maxOf('hero.metrics')"
                       itemName="key number"
                       [newItem]="blank.metric"
@@ -399,7 +408,11 @@ const H = {
                   }
                   @case ('about') {
                     <div class="two">
-                      <app-site-field path="about.label" label="Section label" [hint]="H.label" />
+                      <app-site-field
+                        path="about.label"
+                        label="Section label"
+                        [hint]="H.labelNav"
+                      />
                       <app-site-field
                         path="about.kicker"
                         label="Line above the heading"
@@ -455,7 +468,7 @@ const H = {
                       <app-site-field
                         path="experience.label"
                         label="Section label"
-                        [hint]="H.label"
+                        [hint]="H.labelNav"
                       />
                       <app-site-field
                         path="experience.cta_label"
@@ -473,6 +486,7 @@ const H = {
                     <h3>Roles</h3>
                     <app-list-editor
                       [items]="c.experience.roles"
+                      path="experience.roles"
                       [max]="maxOf('experience.roles')"
                       itemName="role"
                       [newItem]="blank.role"
@@ -506,6 +520,7 @@ const H = {
                     />
                     <app-list-editor
                       [items]="c.experience.earlier_roles"
+                      path="experience.earlier_roles"
                       [max]="maxOf('experience.earlier_roles')"
                       itemName="earlier role"
                       [newItem]="blank.earlierRole"
@@ -523,12 +538,17 @@ const H = {
                     <app-site-errors path="experience.earlier_roles" />
                   }
                   @case ('work') {
-                    <app-site-field path="work.label" label="Section label" [hint]="H.label" />
+                    <app-site-field
+                      path="work.label"
+                      label="Section label"
+                      [hint]="H.labelFooter"
+                    />
                     <app-site-field path="work.heading" label="Heading" />
                     <app-site-field path="work.intro" label="Intro" kind="textarea" [rows]="2" />
                     <h3>Projects</h3>
                     <app-list-editor
                       [items]="c.work.items"
+                      path="work.items"
                       [max]="maxOf('work.items')"
                       itemName="project"
                       [newItem]="blank.workItem"
@@ -580,6 +600,7 @@ const H = {
                     </datalist>
                     <app-list-editor
                       [items]="c.organizations.items"
+                      path="organizations.items"
                       [max]="maxOf('organizations.items')"
                       itemName="organisation"
                       [newItem]="blank.organization"
@@ -632,7 +653,7 @@ const H = {
                               <button
                                 class="ab sm"
                                 type="button"
-                                (click)="o.logo_url = ''; markDirty()"
+                                (click)="o.logo_url = ''; markDirty(); focusUpload($event)"
                               >
                                 Remove logo
                               </button>
@@ -650,7 +671,11 @@ const H = {
                     <app-site-errors path="organizations.items" />
                   }
                   @case ('expertise') {
-                    <app-site-field path="expertise.label" label="Section label" [hint]="H.label" />
+                    <app-site-field
+                      path="expertise.label"
+                      label="Section label"
+                      [hint]="H.labelFooter"
+                    />
                     <app-site-field path="expertise.heading" label="Heading" />
                     <app-site-field
                       path="expertise.intro"
@@ -661,6 +686,7 @@ const H = {
                     <h3>Areas</h3>
                     <app-list-editor
                       [items]="c.expertise.items"
+                      path="expertise.items"
                       [max]="maxOf('expertise.items')"
                       itemName="area"
                       [newItem]="blank.expertiseItem"
@@ -749,6 +775,7 @@ const H = {
                     <p class="a-hint">Also given to search engines as an FAQ.</p>
                     <app-list-editor
                       [items]="c.faq.items"
+                      path="faq.items"
                       [max]="maxOf('faq.items')"
                       itemName="question"
                       [newItem]="blank.qa"
@@ -767,7 +794,11 @@ const H = {
                     <app-site-errors path="faq.items" />
                   }
                   @case ('contact') {
-                    <app-site-field path="contact.label" label="Section label" [hint]="H.label" />
+                    <app-site-field
+                      path="contact.label"
+                      label="Section label"
+                      [hint]="H.labelNav"
+                    />
                     <app-site-field path="contact.heading" label="Heading" />
                     <app-site-field path="contact.intro" label="Intro" kind="textarea" [rows]="2" />
                     <label class="a-row"
@@ -915,6 +946,7 @@ const H = {
                     </p>
                     <app-list-editor
                       [items]="c.identity.other_links"
+                      path="identity.other_links"
                       [max]="maxOf('identity.other_links')"
                       itemName="link"
                       [newItem]="blank.link"
@@ -971,6 +1003,7 @@ const H = {
                     <h3>Education</h3>
                     <app-list-editor
                       [items]="c.identity.education"
+                      path="identity.education"
                       [max]="maxOf('identity.education')"
                       itemName="qualification"
                       [newItem]="blank.education"
@@ -1096,7 +1129,11 @@ const H = {
 
                   @case ('video-list') {
                     <p class="a-hint">
-                      The videos on the /videos page, in this order. Each one plays on the page.
+                      The videos on the /videos page, in this order. Each one plays on the page. The
+                      home page plays its own featured video, set in
+                      <a routerLink="/admin/site/home" fragment="sec-videos-band"
+                        >Home page → Videos band &amp; featured video</a
+                      >.
                     </p>
                     <label class="a-row"
                       ><input
@@ -1108,6 +1145,7 @@ const H = {
                     >
                     <app-list-editor
                       [items]="c.videos.items"
+                      path="videos.items"
                       [max]="maxOf('videos.items')"
                       itemName="video"
                       [newItem]="blank.video"
@@ -1238,6 +1276,7 @@ const H = {
           <app-history-dialog
             [dirty]="dirty()"
             [baseUpdatedAt]="d.updated_at"
+            (discardRequested)="discardChanges()"
             (siteRestored)="restored($event)"
             (closed)="historyOpen.set(false)"
           />
@@ -1267,6 +1306,8 @@ export class SiteContentEditorComponent implements UnsavedChanges {
   readonly notice = signal('');
   readonly conflict = signal('');
   readonly busy = signal(false);
+  /** Reset everything is running: the form is inert, as the reply replaces every field. */
+  readonly resetting = signal(false);
   readonly historyOpen = signal(false);
   readonly open = signal<ReadonlySet<string>>(new Set());
   readonly problem = computed(() => {
@@ -1346,11 +1387,12 @@ export class SiteContentEditorComponent implements UnsavedChanges {
 
   // ---- Load and save ----
 
-  private load() {
+  private load(then?: () => void) {
     this.api.get<SiteContentAdminDoc>('site-content').subscribe({
       next: (d) => {
         this.setDoc(d);
         this.goToFragment(this.route.snapshot.fragment);
+        then?.();
       },
       error: (e) => this.error.set(errMsg(e)),
     });
@@ -1371,6 +1413,13 @@ export class SiteContentEditorComponent implements UnsavedChanges {
     this.notice.set('');
     this.load();
   }
+  /** Back to the last saved version, without leaving the screen (or the History dialog). */
+  discardChanges() {
+    if (!confirm('Discard your unsaved changes and go back to the last saved version?')) return;
+    this.notice.set('');
+    this.matches.set(null);
+    this.load(() => this.notice.set('Your unsaved changes were discarded.'));
+  }
   save() {
     const d = this.doc();
     if (!d || this.busy()) return;
@@ -1387,10 +1436,23 @@ export class SiteContentEditorComponent implements UnsavedChanges {
       return;
     }
     this.busy.set(true);
+    // The fields stay editable while the request runs: remember what was sent.
+    const sent = JSON.stringify(d.content);
     const body: SiteContentPut = { content: d.content, base_updated_at: d.updated_at };
     this.api.put<SiteContentAdminDoc>('site-content', body).subscribe({
       next: (r) => {
         this.busy.set(false);
+        const cur = this.doc();
+        if (cur && JSON.stringify(cur.content) !== sent) {
+          // Edited since: keep those edits (still unsaved) on top of the saved version.
+          this.draft.doc.set({ ...r, content: cur.content });
+          this.draft.dirty.set(true);
+          this.draft.errors.set([]);
+          this.error.set('');
+          this.conflict.set('');
+          this.notice.set('Saved. Your newer changes are not saved yet.');
+          return;
+        }
         this.setDoc(r);
         this.notice.set('Saved.');
       },
@@ -1399,6 +1461,7 @@ export class SiteContentEditorComponent implements UnsavedChanges {
   }
   private failed(e: unknown) {
     this.busy.set(false);
+    this.resetting.set(false);
     const x = e as { status?: number; error?: ApiError };
     if (x?.status === 400 && x.error?.errors?.length) return this.failedWith(x.error.errors);
     if (x?.status === 409) {
@@ -1480,6 +1543,13 @@ export class SiteContentEditorComponent implements UnsavedChanges {
       c.organizations.items.some((o) => o.logo_url) && c.organizations.intro.includes('Names only')
     );
   }
+  /** "Remove logo" removes itself: focus the upload button next to it instead. */
+  focusUpload(e: Event) {
+    const row = (e.target as HTMLElement).closest('.a-row');
+    afterNextRender(() => row?.querySelector<HTMLElement>('app-media-picker button')?.focus(), {
+      injector: this.injector,
+    });
+  }
   ytId(v: string) {
     return (
       /(?:^|youtu\.be\/|[?&]v=|\/(?:shorts|embed|live)\/)([A-Za-z0-9_-]{11})(?=$|[?&#/])/.exec(
@@ -1493,13 +1563,16 @@ export class SiteContentEditorComponent implements UnsavedChanges {
   resetGroup(g: Group) {
     const d = this.doc();
     if (!d) return;
+    // Years of experience is a fact, not site text: it stays as it is.
+    const fields = g.fields.filter((f) => f !== 'identity.experience_years');
+    const years = fields.length < g.fields.length ? ' Years of experience stays as it is.' : '';
     if (
       !confirm(
-        `Put “${g.title}” back to the original site text? Nothing is saved until you click Save changes.`,
+        `Put “${g.title}” back to the original site text?${years} Nothing is saved until you click Save changes.`,
       )
     )
       return;
-    copyFields(d.content, d.defaults, g.fields);
+    copyFields(d.content, d.defaults, fields);
     this.markDirty();
     this.notice.set(`“${g.title}” is back to the original text. Review and save.`);
   }
@@ -1514,10 +1587,12 @@ export class SiteContentEditorComponent implements UnsavedChanges {
     )
       return;
     this.busy.set(true);
+    this.resetting.set(true);
     const body: SiteContentReset = { all: true, base_updated_at: d.updated_at };
     this.api.post<SiteContentAdminDoc>('site-content/reset', body).subscribe({
       next: (r) => {
         this.busy.set(false);
+        this.resetting.set(false);
         this.setDoc(r);
         this.notice.set('Everything is back to the original site text.');
         window.scrollTo({ top: 0 });

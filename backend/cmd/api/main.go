@@ -235,11 +235,10 @@ func seedProviders(ctx context.Context, db *pgxpool.Pool, r *providers.Repo, log
 		return err
 	}
 	defer conn.Release()
-	const lockID = 7262411002
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, store.LockProviders); err != nil {
 		return err
 	}
-	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockID) //nolint:errcheck
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, store.LockProviders) //nolint:errcheck
 	existing, err := r.List(ctx)
 	if err != nil || len(existing) > 0 {
 		return err

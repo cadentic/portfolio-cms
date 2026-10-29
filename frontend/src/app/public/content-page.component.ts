@@ -91,8 +91,10 @@ export class ContentPageComponent {
           this.unavailable.set(false);
           const path = segs.map((s) => s.path).join('/');
           const isArticle = route.snapshot.data['kind'] === 'article';
-          const req: Observable<Page> = isArticle ? this.api.article(route.snapshot.paramMap.get('slug') ?? '') : this.api.page(path);
-          const fullPath = '/' + (isArticle ? 'blog/' + route.snapshot.paramMap.get('slug') : path);
+          const slug = route.snapshot.paramMap.get('slug') ?? '';
+          const req: Observable<Page> = isArticle ? this.api.article(slug) : this.api.page(path);
+          const fullPath = '/' + (isArticle ? 'blog/' + slug : path);
+          this.retry.set(retryHref(isArticle ? ['blog', slug] : segs.map((s) => s.path)));
           return req.pipe(catchError((e) => (isDown(e) ? this.down(fullPath) : this.tryRedirect(fullPath))));
         }),
       )
@@ -121,7 +123,6 @@ export class ContentPageComponent {
 
   /** The API is down or too slow (D16): 503, never cached, never indexed. */
   private down(path: string): Observable<null> {
-    this.retry.set(path);
     this.unavailable.set(true);
     this.status.unavailable();
     this.seo.set({ title: 'Temporarily unavailable', description: 'This page could not be loaded. Please try again.', path, noindex: true });
@@ -156,6 +157,15 @@ export class ContentPageComponent {
       publishedTime: pg.first_published_at || pg.published_at, modifiedTime: pg.updated_at, tags: pg.tags, jsonLd: ld,
     });
   }
+}
+
+/**
+ * Same-origin link back to this page. Route segments are decoded, so each is encoded again and
+ * empty ones are dropped: "/%5Cevil.com" must not become "/\evil.com", which browsers read as
+ * "//evil.com", another site.
+ */
+function retryHref(segments: string[]): string {
+  return '/' + segments.filter(Boolean).map(encodeURIComponent).join('/');
 }
 
 /** Network failure (status 0), a 5xx or the request timeout, as opposed to a real 404. */

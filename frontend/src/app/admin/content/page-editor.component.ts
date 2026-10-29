@@ -241,8 +241,12 @@ export class PageEditorComponent {
   constructor() {
     const id = this.route.snapshot.paramMap.get('id')!;
     if (id === 'new') {
-      const kind: Kind = this.route.snapshot.queryParamMap.get('kind') === 'page' ? 'page' : 'article';
-      this.d.set({ kind, title: '', slug: '', excerpt: '', hero: { type: 'none' }, blocks: [{ type: 'paragraph', text: '' }],
+      const q = this.route.snapshot.queryParamMap;
+      const kind: Kind = q.get('kind') === 'page' ? 'page' : 'article';
+      // Legal pages → "Create page" for a missing legal page passes its slug and title.
+      const slug = q.get('slug') ?? '';
+      this.slugTouched = !!slug;
+      this.d.set({ kind, title: q.get('title') ?? '', slug, excerpt: '', hero: { type: 'none' }, blocks: [{ type: 'paragraph', text: '' }],
         featured_image_url: '', author_name: '', categories: '', tags: '', seo_title: '', seo_description: '', og_image: '', canonical: '',
         noindex: false, status: 'draft', path: '', first_published_at: null });
     } else {

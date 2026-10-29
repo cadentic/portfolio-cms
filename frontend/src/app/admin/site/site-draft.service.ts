@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { FieldError, SiteContentAdminDoc } from './site-content.model';
+import { FieldError, SiteContentAdminDoc, remapRows } from './site-content.model';
 
 /**
  * The site content being edited. Home page, Site profile and Videos edit one
@@ -21,6 +21,15 @@ export class SiteDraft {
     return this.errors().filter(
       (e) => e.path === path || (withItems && e.path.startsWith(path + '[')),
     );
+  }
+
+  /** Rows of the list at `path` were removed or moved (`from[k]`: old index of row k). */
+  moveRows(path: string, from: number[]) {
+    this.errors.update((es) => remapRows(es, path, from));
+    const d = this.doc();
+    if (d?.warnings.some((w) => w.path.startsWith(path + '['))) {
+      this.doc.set({ ...d, warnings: remapRows(d.warnings, path, from) });
+    }
   }
 
   discard() {

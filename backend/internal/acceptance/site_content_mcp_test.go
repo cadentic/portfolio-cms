@@ -100,13 +100,14 @@ func TestSiteContentMCP(t *testing.T) {
 
 	// Legal pages are the owner's alone.
 	privacy := e.Str(`SELECT id::text FROM cms_pages WHERE kind='page' AND slug='privacy'`)
-	for _, tool := range []string{"update_page", "unpublish_page"} {
+	for _, tool := range []string{"update_page", "unpublish_page", "publish_page"} {
 		_, text, isErr := toolResult(rpc, 10, tool, map[string]any{"id": privacy, "title": "Changed"})
 		if !isErr || !strings.Contains(text, "Legal pages") || !strings.Contains(text, "admin") {
 			t.Fatalf("%s on the privacy page: %v %s", tool, isErr, text)
 		}
 	}
-	if e.Str(`SELECT title || ' ' || status FROM cms_pages WHERE id=$1`, privacy) != "Privacy notice published" {
+	if e.Str(`SELECT title || ' ' || status || ' ' || to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI')
+		FROM cms_pages WHERE id=$1`, privacy) != "Privacy notice published 2026-10-28T06:30" {
 		t.Fatal("privacy page changed through MCP")
 	}
 

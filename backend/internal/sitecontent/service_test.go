@@ -205,6 +205,11 @@ func TestServiceApply(t *testing.T) {
 		!strings.Contains(ve.Error(), "media library") {
 		t.Errorf("missing media: %v", err)
 	}
+	// A blank row above is dropped on save, but error paths index the rows as sent.
+	if _, err := s.Apply(ctx, Patch{Sections: patch(t, `{"organizations":{"items":[{"name":" "},{"name":"A","logo_url":" /media/uploads/2026/10/missing.png"}]}}`)},
+		owner, false); !errors.As(err, &ve) || len(ve.Errors) != 1 || ve.Errors[0].Path != "organizations.items[1].logo_url" {
+		t.Errorf("missing media after a blank row: %v", err)
+	}
 	if _, err := s.Apply(ctx, Patch{Reset: []string{"nope"}}, owner, false); !errors.As(err, &ve) {
 		t.Errorf("unknown reset section: %v", err)
 	}
@@ -275,6 +280,101 @@ func TestServiceApply(t *testing.T) {
 	}
 	if list, _ := versions.List(ctx, db, "site_content", Key, 1); list[0].Action != "reset" || !slices.Equal(list[0].Changed, res.Changed) {
 		t.Errorf("reset version: %+v", list[0])
+	}
+}
+
+// Saves take their own advisory lock, not the one provider seeding holds
+// while an API instance starts.
+func TestServiceLockID(t *testing.T) {
+	_, db := newDB(t)
+	ctx := context.Background()
+	ids := []int64{store.LockMigrate, store.LockProviders, store.LockResume, store.LockSiteContent}
+	if u := slices.Compact(slices.Sorted(slices.Values(ids))); len(u) != len(ids) {
+		t.Fatalf("advisory lock ids repeat: %v", ids)
+	}
+	conn, err := db.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, store.LockProviders); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, store.LockProviders) //nolint:errcheck
+	short, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	s := &Service{DB: db, Log: quiet}
+	if _, err := s.Apply(short, Patch{Sections: patch(t, `{"hero":{"title":"Not blocked"}}`)}, "w", false); err != nil {
+		t.Fatalf("save waited on the provider seeding lock: %v", err)
+	}
+}
+
+// A database that hangs (Neon resuming, a black-holed connection) delays
+// Public by at most the refresh timeout once a good copy exists, however many
+// requests are waiting: they get the last good copy instead of queueing.
+func TestServiceSlowDatabase(t *testing.T) {
+	_, db := newDB(t)
+	ctx := context.Background()
+	s := &Service{DB: db, Log: quiet, refresh: 300 * time.Millisecond}
+	good, etag, _, err := s.Public(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good = bytes.Clone(good)
+
+	// Hold a lock that every read of app_settings waits for.
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background()) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `LOCK TABLE app_settings IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	const n = 6
+	start := time.Now()
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			body, tag, stale, err := s.Public(cctx)
+			if err != nil || !stale || !bytes.Equal(body, good) || tag != etag {
+				t.Errorf("during the outage: stale=%v err=%v", stale, err)
+			}
+		})
+	}
+	wg.Wait()
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("%d requests took %v; they queued on the database", n, d)
+	}
+	// The admin read waits for the database rather than failing fast.
+	short, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	if _, err := s.Get(short); err == nil {
+		t.Error("Get returned while the table was locked")
+	}
+
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, _, stale, err := s.Public(ctx); err == nil && !stale {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("still stale after the database came back")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// A save proves the database is back: the next read goes to it at once.
+	if _, err := s.Apply(ctx, Patch{Sections: patch(t, `{"hero":{"title":"Back"}}`)}, "w", false); err != nil {
+		t.Fatal(err)
+	}
+	if c := publicContent(t, s); c.Hero.Title != "Back" {
+		t.Errorf("after a save: %q", c.Hero.Title)
 	}
 }
 

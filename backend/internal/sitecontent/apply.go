@@ -10,6 +10,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -55,9 +56,9 @@ func FromStored(raw []byte) (Content, error) {
 }
 
 // ApplySections merges sections over a copy of base (D5): scalars present
-// overwrite, a list or nested object present replaces the whole value, and
-// sections left out are kept. Errors are per section; the result is not
-// normalised.
+// overwrite, a list or nested object present replaces the whole value, null
+// empties a field, and sections left out are kept. Errors are per section;
+// the result is not normalised.
 func ApplySections(base Content, sections map[string]json.RawMessage) (Content, []FieldError) {
 	out := clone(base)
 	v := reflect.ValueOf(&out).Elem()
@@ -96,8 +97,10 @@ var errMerge = errors.New("site content: section rejected")
 
 // merge decodes one section object over sec. Top-level lists and nested
 // objects whose keys are present are zeroed first, so a stored or patched
-// list never decodes into existing elements. strict rejects unknown fields
-// and reports type errors as a FieldError relative to the section.
+// list never decodes into existing elements. strict rejects unknown fields,
+// reports type errors as a FieldError relative to the section, and zeroes a
+// text, number or true/false field sent as null, which encoding/json would
+// leave unchanged.
 func merge(sec reflect.Value, b json.RawMessage, strict bool) (FieldError, error) {
 	b = bytes.TrimSpace(b)
 	var present map[string]json.RawMessage
@@ -117,9 +120,10 @@ func merge(sec reflect.Value, b json.RawMessage, strict bool) (FieldError, error
 			}
 		}
 	}
-	for k := range present {
+	for k, raw := range present {
 		if i, ok := known[k]; ok {
-			if f := sec.Field(i); f.Kind() == reflect.Slice || f.Kind() == reflect.Struct {
+			f := sec.Field(i)
+			if f.Kind() == reflect.Slice || f.Kind() == reflect.Struct || strict && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 				f.Set(reflect.Zero(f.Type()))
 			}
 		}
@@ -131,6 +135,9 @@ func merge(sec reflect.Value, b json.RawMessage, strict bool) (FieldError, error
 	if err := dec.Decode(sec.Addr().Interface()); err != nil {
 		var te *json.UnmarshalTypeError
 		if errors.As(err, &te) {
+			if fe, ok := typeError(b, t); ok {
+				return fe, err
+			}
 			return FieldError{Path: te.Field, Message: typeMessage(te.Type)}, err
 		}
 		if msg, ok := strings.CutPrefix(err.Error(), "json: "); ok {
@@ -139,6 +146,77 @@ func merge(sec reflect.Value, b json.RawMessage, strict bool) (FieldError, error
 		return FieldError{Message: "is not valid JSON"}, err
 	}
 	return FieldError{}, nil
+}
+
+// typeError finds the first value in b, in document order, whose JSON type
+// does not fit t, and reports its path with list indices, which
+// json.UnmarshalTypeError.Field leaves out ("metrics.value" for metrics[1].value).
+func typeError(b []byte, t reflect.Type) (FieldError, bool) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	fe, found, _ := checkType(dec, t, "")
+	return fe, found
+}
+
+func checkType(dec *json.Decoder, t reflect.Type, path string) (FieldError, bool, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return FieldError{}, false, err
+	}
+	bad := FieldError{Path: path, Message: typeMessage(t)}
+	switch v := tok.(type) {
+	case json.Delim: // an opening one: Token returns closing ones only after More is false
+		if v == '{' && t.Kind() != reflect.Struct || v == '[' && t.Kind() != reflect.Slice {
+			return bad, true, nil
+		}
+		fields := map[string]reflect.Type{}
+		if v == '{' {
+			for i := range t.NumField() {
+				fields[jsonKey(t.Field(i))] = t.Field(i).Type
+			}
+		}
+		for i := 0; dec.More(); i++ {
+			et, ep := t, ""
+			if v == '[' {
+				et, ep = t.Elem(), fmt.Sprintf("%s[%d]", path, i)
+			} else {
+				kt, err := dec.Token()
+				if err != nil {
+					return FieldError{}, false, err
+				}
+				k, _ := kt.(string)
+				ft, ok := fields[k]
+				if !ok { // unknown fields are reported elsewhere
+					var skip json.RawMessage
+					if err := dec.Decode(&skip); err != nil {
+						return FieldError{}, false, err
+					}
+					continue
+				}
+				et, ep = ft, k
+				if path != "" {
+					ep = path + "." + k
+				}
+			}
+			if fe, found, err := checkType(dec, et, ep); found || err != nil {
+				return fe, found, err
+			}
+		}
+		_, err := dec.Token()
+		return FieldError{}, false, err
+	case string:
+		return bad, t.Kind() != reflect.String, nil
+	case bool:
+		return bad, t.Kind() != reflect.Bool, nil
+	case json.Number:
+		switch t.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			_, err := strconv.ParseInt(v.String(), 10, t.Bits())
+			return bad, err != nil, nil
+		}
+		return bad, true, nil
+	}
+	return FieldError{}, false, nil // null fits every field
 }
 
 func typeMessage(t reflect.Type) string {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -32,6 +33,13 @@ var ErrNotFound = errors.New("page not found")
 // ErrProtected is returned for a change that would break a legal page the
 // site links to (footer, consent records).
 var ErrProtected = errors.New("this legal page is required by the site (footer links and consent records): edit its text, but it cannot be deleted, unpublished, renamed or moved")
+
+// InvalidError is an update the caller has to fix, as opposed to a database
+// failure. Its text is the problem, as before.
+type InvalidError struct{ Err error }
+
+func (e *InvalidError) Error() string { return e.Err.Error() }
+func (e *InvalidError) Unwrap() error { return e.Err }
 
 // protectedSlugs are the top-level legal pages seeded by migration 0007. They
 // are not in reserved: UNIQUE (kind, slug) and the seeded rows block copies.
@@ -142,7 +150,7 @@ type Service struct {
 var (
 	slugRe   = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	ytIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
-	ytURLRe  = regexp.MustCompile(`(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})`)
+	ytURLRe  = regexp.MustCompile(`(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})(?:[?&#/]|$)`)
 	reserved = map[string]bool{"admin": true, "api": true, "blog": true, "subscribe": true, "unsubscribe": true,
 		"media": true, "assets": true, "sitemap.xml": true, "robots.txt": true, "oauth": true, "mcp": true, "videos": true,
 		"llms.txt": true, "healthz": true, "readyz": true, "metrics": true, "app-config.json": true, "images": true}
@@ -452,10 +460,10 @@ func (s *Service) update(ctx context.Context, id string, in Input, actor, action
 		}
 		v, err := s.prepare(&in, cur.Kind)
 		if err != nil {
-			return err
+			return &InvalidError{err}
 		}
 		if pid, ok := v["parent_id"].(string); ok && pid == id {
-			return errors.New("a page cannot be its own parent")
+			return &InvalidError{errors.New("a page cannot be its own parent")}
 		}
 		protected := isProtected(cur)
 		if protected {
@@ -486,7 +494,7 @@ func (s *Service) update(ctx context.Context, id string, in Input, actor, action
 		}
 		p, err := scan(tx.QueryRow(ctx, `UPDATE cms_pages SET `+strings.Join(sets, ",")+` WHERE id=$1 RETURNING `+cols, args...))
 		if store.IsUniqueViolation(err) {
-			return errors.New("another " + cur.Kind + " already uses this slug")
+			return &InvalidError{errors.New("another " + cur.Kind + " already uses this slug")}
 		}
 		if err != nil {
 			return err
@@ -558,22 +566,22 @@ func snapshot(p *Page) []byte {
 }
 
 // RestoreVersion puts back the text of a saved version (title, excerpt, hero,
-// blocks and SEO) through Update, recorded with action "restore".
-func (s *Service) RestoreVersion(ctx context.Context, id string, versionID int64, actor string) (*Page, error) {
+// blocks and SEO) through Update, recorded with action "restore". Like Update
+// it returns the changed columns: none when the page already has that text.
+func (s *Service) RestoreVersion(ctx context.Context, id string, versionID int64, actor string) (*Page, []string, error) {
 	v, err := versions.Get(ctx, s.DB, "page", id, versionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var snap pageSnapshot
 	if err := json.Unmarshal(v.Snapshot, &snap); err != nil {
-		return nil, fmt.Errorf("version %d: %w", versionID, err)
+		return nil, nil, fmt.Errorf("version %d: %w", versionID, err)
 	}
 	if snap.Blocks == nil {
 		snap.Blocks = []Block{}
 	}
-	p, _, err := s.update(ctx, id, Input{Title: &snap.Title, Excerpt: &snap.Excerpt, Hero: &snap.Hero, Blocks: snap.Blocks, SEO: &snap.SEO},
+	return s.update(ctx, id, Input{Title: &snap.Title, Excerpt: &snap.Excerpt, Hero: &snap.Hero, Blocks: snap.Blocks, SEO: &snap.SEO},
 		actor, "restore")
-	return p, err
 }
 
 func isProtected(p *Page) bool {
@@ -655,7 +663,9 @@ type PublishResult struct {
 
 // Publish makes a page/article public. FirstPublish is true only for native
 // content published for the first time — imported content (source set) or a
-// re-publish never counts, so routine edits never notify subscribers.
+// re-publish never counts, so routine edits never notify subscribers. A page
+// that is already published keeps its updated_at ("Last updated", sitemap
+// lastmod), since nothing in it changed.
 func (s *Service) Publish(ctx context.Context, id string) (*PublishResult, error) {
 	var res PublishResult
 	err := store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
@@ -668,7 +678,8 @@ func (s *Service) Publish(ctx context.Context, id string) (*PublishResult, error
 			return err
 		}
 		p, err := scan(tx.QueryRow(ctx, `UPDATE cms_pages SET status='published', published_at=COALESCE(published_at, now()),
-			first_published_at=COALESCE(first_published_at, now()), updated_at=now() WHERE id=$1 RETURNING `+cols, id))
+			first_published_at=COALESCE(first_published_at, now()),
+			updated_at=CASE WHEN status='published' THEN updated_at ELSE now() END WHERE id=$1 RETURNING `+cols, id))
 		if err != nil {
 			return err
 		}
@@ -709,13 +720,22 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // --- public reads ----------------------------------------------------------
 
 func (s *Service) PublishedArticle(ctx context.Context, slug string) (*Page, error) {
+	if !lookupable(slug) {
+		return nil, ErrNotFound
+	}
 	return scan(s.DB.QueryRow(ctx, `SELECT `+cols+` FROM cms_pages WHERE kind='article' AND slug=$1 AND status='published'`, slug))
+}
+
+// lookupable rejects text Postgres cannot compare as UTF-8 (NUL bytes,
+// invalid sequences), so a crafted URL is a 404 rather than a 500.
+func lookupable(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
 // PublishedPage resolves "/parent/child" paths by walking parent_id.
 func (s *Service) PublishedPage(ctx context.Context, path string) (*Page, error) {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segs) == 0 || segs[0] == "" || len(segs) > 6 {
+	if len(segs) == 0 || segs[0] == "" || len(segs) > 6 || !lookupable(path) {
 		return nil, ErrNotFound
 	}
 	var parent *string

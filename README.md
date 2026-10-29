@@ -44,8 +44,11 @@ bucket or Azure Blob container in the cloud (`MEDIA_STORAGE`, see
 [docs/configuration.md](docs/configuration.md)). Either way they are served
 from `/media/…` on the site's own domain.
 
-To add your resume download, mount the PDF into the `api` service and set
-`RESUME_FILE_PATH` (see `.env.example`).
+Site text (home page sections, profile and links, organisations with logos,
+videos, FAQ, SEO text and the legal pages) is edited in the admin under
+Site content. Upload the resume PDF there too, in Site profile → Resume; it
+is kept in private storage and only served after email verification.
+`RESUME_FILE_PATH` (see `.env.example`) still works as a fallback.
 
 ## Tests
 

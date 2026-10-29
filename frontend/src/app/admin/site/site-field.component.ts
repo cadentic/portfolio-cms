@@ -6,6 +6,13 @@ import { labelFor } from './site-labels';
 
 export type FieldKind = 'text' | 'textarea' | 'lines' | 'number' | 'url' | 'date';
 
+/** A one-per-line field's items: trimmed, empty lines dropped. */
+const splitLines = (v: string) =>
+  v
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
 /** DOM id of the input for a document path: "hero.metrics[0].value" → "f-hero-metrics-0-value". */
 export function fieldId(path: string): string {
   return 'f-' + path.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/-$/, '');
@@ -156,16 +163,20 @@ export class SiteFieldComponent {
     const v = this.value();
     return Array.isArray(v) ? (v as string[]) : [];
   }
+  /** The text as last typed. */
+  private typed = '';
+  /**
+   * The typed text while it still gives the draft's value, so an emptied line stays where the
+   * owner is typing instead of being removed under the caret. A load, reset or Replace all
+   * changes the value, and then the list is shown one item per line.
+   */
   linesText() {
-    return this.lines().join('\n');
+    const joined = this.lines().join('\n');
+    return splitLines(this.typed).join('\n') === joined ? this.typed : joined;
   }
   setLines(v: string) {
-    this.set(
-      v
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    );
+    this.typed = v;
+    this.set(splitLines(v));
   }
 
   hintText(): string {
