@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -11,6 +13,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +21,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/cadentic/portfolio-cms/backend/internal/media"
+	"github.com/cadentic/portfolio-cms/backend/internal/settings"
+	"github.com/cadentic/portfolio-cms/backend/internal/sitecontent"
 	"github.com/cadentic/portfolio-cms/backend/internal/store"
 )
 
@@ -52,10 +57,11 @@ func scanMedia(row pgx.Row) (mediaItem, error) {
 }
 
 // serveMedia streams /media/{key} from the private bucket. ServeContent
-// handles Range, If-None-Match and If-Modified-Since.
+// handles Range, If-None-Match and If-Modified-Since. Keys under private/
+// (the resume) are never served here.
 func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
-	if s.Media == nil || !media.ValidKey(key) {
+	if s.Media == nil || !media.ValidKey(key) || strings.HasPrefix(strings.ToLower(key), "private/") {
 		http.NotFound(w, r)
 		return
 	}
@@ -313,23 +319,14 @@ func (s *Server) deleteMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("force") != "true" {
-		var titles []string
-		rows, err := s.DB.Query(ctx, `SELECT title FROM cms_pages
-			WHERE strpos(hero::text, $1) > 0 OR strpos(blocks::text, $1) > 0 OR featured_image_url = $1 OR seo->>'og_image' = $1
-			ORDER BY updated_at DESC LIMIT 5`, url)
+		pages, sets, mails, err := s.mediaUsage(ctx, url)
 		if err != nil {
 			s.internal(w, r, err)
 			return
 		}
-		for rows.Next() {
-			var t string
-			if rows.Scan(&t) == nil {
-				titles = append(titles, t)
-			}
-		}
-		rows.Close()
-		if len(titles) > 0 {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": "this file is used on: " + strings.Join(titles, ", "), "pages": titles})
+		if all := slices.Concat(pages, sets, mails); len(all) > 0 {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "this file is used on: " + strings.Join(all, ", "),
+				"pages": pages, "settings": sets, "email": mails})
 			return
 		}
 	}
@@ -351,4 +348,63 @@ func (s *Server) deleteMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "media.delete", "media", id.String(), map[string]any{"url": url})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mediaUsage lists where url is used: page titles, settings (site content
+// fields, the email brand logo) and email HTML (templates, unsent campaigns).
+// Media keys are [A-Za-z0-9._/-] and neither Go JSON nor jsonb text escapes
+// "/", so a substring match is exact. The lists are never nil.
+func (s *Server) mediaUsage(ctx context.Context, url string) (pages, sets, mails []string, err error) {
+	pages, sets, mails = []string{}, []string{}, []string{}
+	rows, err := s.DB.Query(ctx, `SELECT title FROM cms_pages
+		WHERE strpos(hero::text, $1) > 0 OR strpos(blocks::text, $1) > 0 OR featured_image_url = $1 OR seo->>'og_image' = $1
+		ORDER BY updated_at DESC LIMIT 5`, url)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if pages, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		return nil, nil, nil, err
+	}
+	rows, err = s.DB.Query(ctx, `SELECT key, value FROM app_settings WHERE strpos(value::text, $1) > 0 ORDER BY key`, url)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	type setting struct {
+		Key   string
+		Value []byte
+	}
+	found, err := pgx.CollectRows(rows, pgx.RowToStructByPos[setting])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, st := range found {
+		switch st.Key {
+		case sitecontent.Key:
+			c, _ := sitecontent.FromStored(st.Value)
+			if u := sitecontent.Usage(c, url); len(u) > 0 {
+				sets = append(sets, u...)
+			} else {
+				sets = append(sets, "Site content")
+			}
+		case "email":
+			var e settings.Email
+			if json.Unmarshal(st.Value, &e) == nil && e.Brand.LogoURL == url {
+				sets = append(sets, "Email settings › Brand logo")
+			} else {
+				sets = append(sets, "Email settings")
+			}
+		default:
+			sets = append(sets, "Settings: "+st.Key)
+		}
+	}
+	rows, err = s.DB.Query(ctx, `(SELECT 'Email template: ' || name FROM email_templates WHERE strpos(html_body, $1) > 0 ORDER BY name)
+		UNION ALL (SELECT 'Campaign: ' || name FROM email_campaigns
+			WHERE status IN ('draft','scheduled') AND strpos(content_html, $1) > 0 ORDER BY updated_at DESC LIMIT 5)`, url)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if mails, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		return nil, nil, nil, err
+	}
+	return pages, sets, mails, nil
 }

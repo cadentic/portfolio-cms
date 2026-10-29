@@ -1,17 +1,21 @@
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { PublicApi, apiError } from '../core/public-api.service';
+import { SiteContentService } from '../core/site-content.service';
 
 @Component({
   selector: 'app-newsletter-form',
   imports: [FormsModule, RouterLink],
   template: `
     <section class="newsletter" aria-labelledby="nl-title">
+      @let nl = site.content().newsletter;
       <div>
-        <div class="eyebrow" style="color:var(--dark-muted)">Newsletter</div>
-        <h2 id="nl-title" style="font-size:clamp(1.8rem,3vw,2.6rem)">New articles and videos, straight to your inbox.</h2>
-        <p>Practical Oracle DBA and database reliability notes, at most a few times a month. Confirm by email; unsubscribe in one click.</p>
+        @if (nl.label) { <div class="eyebrow" style="color:var(--dark-muted)">{{ nl.label }}</div> }
+        <h2 id="nl-title" style="font-size:clamp(1.8rem,3vw,2.6rem)">{{ nl.heading || 'Newsletter' }}</h2>
+        @if (nl.intro) { <p>{{ nl.intro }}</p> }
       </div>
       @if (state() === 'done') {
         <div class="alert alert-ok" role="status">
@@ -36,7 +40,7 @@ import { PublicApi, apiError } from '../core/public-api.service';
           <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off" [(ngModel)]="website" /></label></div>
           <label class="check">
             <input type="checkbox" name="consent" [(ngModel)]="consent" required />
-            <span>{{ consentText() }} Read the <a routerLink="/privacy">privacy notice</a>.</span>
+            <span>{{ consentShown() }} Read the <a routerLink="/privacy">privacy notice</a>.</span>
           </label>
           <button class="btn btn-primary" type="submit" [disabled]="busy()">
             {{ busy() ? 'Subscribing…' : 'Subscribe' }}
@@ -49,8 +53,12 @@ import { PublicApi, apiError } from '../core/public-api.service';
 })
 export class NewsletterFormComponent {
   private api = inject(PublicApi);
+  readonly site = inject(SiteContentService);
   readonly source = input('website');
-  readonly consentText = input('I agree to receive the newsletter by email and can unsubscribe at any time.');
+  /** Empty: the consent wording from Email → Settings, as the API records it. */
+  readonly consentText = input('');
+  private siteConsent = toSignal(this.api.site().pipe(map((c) => c.consent_text)), { initialValue: '' });
+  readonly consentShown = computed(() => this.consentText() || this.siteConsent());
   readonly uid = Math.random().toString(36).slice(2, 8);
   email = '';
   name = '';

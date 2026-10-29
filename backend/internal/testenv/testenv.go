@@ -46,6 +46,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/queue"
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
 	"github.com/cadentic/portfolio-cms/backend/internal/settings"
+	"github.com/cadentic/portfolio-cms/backend/internal/sitecontent"
 	"github.com/cadentic/portfolio-cms/backend/internal/store"
 	"github.com/cadentic/portfolio-cms/backend/internal/subscribers"
 	"github.com/cadentic/portfolio-cms/backend/internal/templates"
@@ -75,6 +76,8 @@ type Env struct {
 	Subscribers *subscribers.Service
 	Campaigns   *campaigns.Service
 	Content     *content.Service
+	SiteContent *sitecontent.Service
+	Signer      tokens.Signer
 	Secrets     providers.MapSecrets
 	BrevoID     string
 	MailjetID   string
@@ -160,6 +163,7 @@ func New(t *testing.T) *Env {
 	subs := &subscribers.Service{DB: db, Settings: sets, Mailer: mail, Signer: signer, SiteURL: SiteURL}
 	camps := &campaigns.Service{DB: db, Settings: sets, Subscribers: subs, SiteURL: SiteURL}
 	cms := &content.Service{DB: db, SiteURL: SiteURL}
+	site := &sitecontent.Service{DB: db, TTL: 0, Log: log}
 	alertSvc := &alerts.Service{DB: db, Log: log}
 
 	cfg := &config.Config{Env: "test", PublicSiteURL: SiteURL, CORSOrigins: []string{SiteURL}, AppSecret: signer.Key,
@@ -169,9 +173,10 @@ func New(t *testing.T) *Env {
 	srv := &api.Server{
 		Cfg: cfg, DB: db, Log: log, Verifier: verifier, Authorizer: authz, Settings: sets, Providers: provs,
 		Registry: registry, Subscribers: subs, Campaigns: camps, Content: cms, Mailer: mail, Alerts: alertSvc,
-		Limiter: &ratelimit.Limiter{DB: db}, Signer: signer,
+		Limiter: &ratelimit.Limiter{DB: db}, Signer: signer, SiteContent: site,
 		OAuth: &oauth.Server{DB: db, Issuer: SiteURL, SiteURL: SiteURL, Authorizer: authz},
-		MCP:   &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, Log: log, SiteURL: SiteURL},
+		MCP: &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, SiteContent: site, Log: log,
+			SiteURL: SiteURL},
 	}
 	cfg.MediaMaxUploadBytes = 1 << 20
 	if srv.Media, err = media.NewLocal(t.TempDir()); err != nil {
@@ -181,7 +186,7 @@ func New(t *testing.T) *Env {
 	t.Cleanup(apiHTTP.Close)
 
 	e := &Env{T: t, Ctx: ctx, DB: db, Mock: mock, MockHTTP: mockHTTP, API: apiHTTP, Server: srv, Settings: sets,
-		Providers: provs, Subscribers: subs, Campaigns: camps, Content: cms, Secrets: secrets}
+		Providers: provs, Subscribers: subs, Campaigns: camps, Content: cms, SiteContent: site, Signer: signer, Secrets: secrets}
 	e.Worker = e.NewWorker("worker-1")
 
 	s := func(v string) *string { return &v }

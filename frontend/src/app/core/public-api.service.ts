@@ -1,13 +1,16 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, of, shareReplay } from 'rxjs';
+import { Observable, catchError, of, shareReplay, timeout } from 'rxjs';
 import { Page, Paged, SiteConfig } from './models';
 
 const fallbackConfig: SiteConfig = {
   site_url: '', blog_enabled: false, gtm_id: '', ga4_id: '', newsletter_topics: ['articles', 'videos', 'career'],
   consent_text: 'I agree to receive the newsletter by email. I can unsubscribe at any time.',
-  privacy_policy_url: '/privacy', privacy_policy_version: '', resume_available: true,
+  privacy_policy_url: '/privacy', privacy_policy_version: '', resume_available: true, verification_ttl_hours: 48,
 };
+
+/** Same as the site content cold-start budget (D16): render slowly rather than fail. */
+const PAGE_TIMEOUT_MS = 15_000;
 
 @Injectable({ providedIn: 'root' })
 export class PublicApi {
@@ -26,11 +29,13 @@ export class PublicApi {
   }
 
   article(slug: string): Observable<Page> {
-    return this.http.get<Page>('/api/public/articles/' + encodeURIComponent(slug));
+    return this.http.get<Page>('/api/public/articles/' + encodeURIComponent(slug)).pipe(timeout(PAGE_TIMEOUT_MS));
   }
 
   page(path: string): Observable<Page> {
-    return this.http.get<Page>('/api/public/pages/' + path.split('/').map(encodeURIComponent).join('/'));
+    return this.http
+      .get<Page>('/api/public/pages/' + path.split('/').map(encodeURIComponent).join('/'))
+      .pipe(timeout(PAGE_TIMEOUT_MS));
   }
 
   redirect(path: string): Observable<{ to: string; status: number }> {

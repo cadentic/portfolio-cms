@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Page } from '../core/models';
 import { PublicApi } from '../core/public-api.service';
 import { Seo } from '../core/seo.service';
+import { SiteContentService } from '../core/site-content.service';
 import { NewsletterFormComponent } from '../shared/newsletter-form.component';
 
 const PAGE_SIZE = 12;
@@ -12,18 +13,19 @@ const PAGE_SIZE = 12;
   selector: 'app-blog-list',
   imports: [RouterLink, DatePipe, NewsletterFormComponent],
   template: `
+    @let b = site.content().blog;
     <section class="page-hero">
       <div class="wrap">
         <ol class="breadcrumbs"><li><a routerLink="/">Home</a></li><li aria-current="page">Blog</li></ol>
-        <h1>{{ tag() ? 'Articles tagged “' + tag() + '”' : 'Notes & insights' }}</h1>
-        <p>Oracle DBA, high availability and reliability engineering, written from production experience.</p>
+        <h1>{{ tag() ? 'Articles tagged “' + tag() + '”' : b.page_heading || 'Blog' }}</h1>
+        @if (b.page_intro) { <p>{{ b.page_intro }}</p> }
       </div>
     </section>
     <div class="wrap section" style="padding-top:48px">
       @if (loading()) {
         <p aria-live="polite">Loading articles…</p>
       } @else if (items().length === 0) {
-        <p>No articles yet. Subscribe below to hear when the first one is published.</p>
+        @if (b.empty_text) { <p>{{ b.empty_text }}</p> }
       } @else {
         <ul class="article-grid">
           @for (a of items(); track a.id) {
@@ -55,6 +57,7 @@ const PAGE_SIZE = 12;
 export class BlogListComponent {
   private api = inject(PublicApi);
   private seo = inject(Seo);
+  readonly site = inject(SiteContentService);
   readonly pageSize = PAGE_SIZE;
   readonly items = signal<Page[]>([]);
   readonly total = signal(0);
@@ -72,9 +75,10 @@ export class BlogListComponent {
         next: (r) => { this.items.set(r.items); this.total.set(r.total); this.loading.set(false); },
         error: () => { this.items.set([]); this.loading.set(false); },
       });
+      const seo = this.site.content().seo;
       this.seo.set({
-        title: page > 1 ? `Blog, page ${page}` : 'Blog: Oracle DBA notes & insights',
-        description: 'Articles on Oracle RAC, Data Guard, RMAN, GoldenGate, EBS and database reliability engineering by Sayantan Chakraborty.',
+        title: page > 1 ? `Blog, page ${page}` : seo.blog_title,
+        description: seo.blog_description,
         path: page > 1 ? `/blog?page=${page}` : '/blog',
         noindex: !!this.tag(),
         jsonLd: [this.seo.breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Blog', path: '/blog' }])],

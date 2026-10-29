@@ -21,10 +21,44 @@ for (const path of pages) {
 test('server-rendered HTML carries SEO, Open Graph and JSON-LD', async ({ request }) => {
   const html = await (await request.get('/')).text();
   expect(html).toContain('<link rel="canonical"');
-  expect(html).toMatch(/<meta property="og:image" content="[^"]+sayantan\.jpg"/);
+  expect(html).toMatch(/<meta property="og:image" content="https?:\/\/[^"]+\.(jpe?g|png|webp|avif|gif)"/);
   const ld = [...html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
   expect(JSON.stringify(ld)).toContain('"Person"');
   expect(html).toContain('<details class="sitemap"');
+});
+
+// Angular escapes these in server-rendered text and attributes.
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+test('home renders the editable site content', async ({ request }) => {
+  const api = await request.get('/api/public/site-content');
+  expect(api.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
+  const c = await api.json();
+  const html = await (await request.get('/')).text();
+  expect(html).toContain(esc(c.identity.name));
+  for (const m of c.hero.metrics) expect(html).toContain(esc(m.value));
+  if (c.organizations.visible) for (const o of c.organizations.items) expect(html).toContain(esc(o.name));
+  if (c.videos.visible && c.videos.featured.youtube_id) expect(html).toContain(`i.ytimg.com/vi/${c.videos.featured.youtube_id}`);
+  expect(html).not.toContain('dQw4w9WgXcQ');
+
+  if (c.videos.items.length) {
+    const videos = await (await request.get('/videos')).text();
+    expect(videos).toContain(esc(c.videos.items[0].title));
+    expect(videos).toContain(`vi/${c.videos.items[0].youtube_id}/hqdefault`);
+  }
+});
+
+test('hydration does not refetch site content', async ({ page }) => {
+  const urls: string[] = [];
+  page.on('request', (r) => urls.push(r.url()));
+  await page.goto('/', { waitUntil: 'networkidle' });
+  expect(urls.filter((u) => u.includes('/api/public/site-content'))).toEqual([]);
+});
+
+test('legal pages are CMS pages in the sitemap', async ({ request }) => {
+  const sitemap = await (await request.get('/sitemap.xml')).text();
+  expect(sitemap.split('/privacy</loc>').length - 1).toBe(1);
+  expect(await (await request.get('/privacy')).text()).toContain('Last updated');
 });
 
 test('unknown paths return a real 404', async ({ page }) => {

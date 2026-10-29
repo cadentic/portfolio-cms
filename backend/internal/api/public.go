@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 
 func (s *Server) publicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/public/site", s.siteConfig)
+	mux.HandleFunc("GET /api/public/site-content", s.siteContentPublic)
 	mux.HandleFunc("POST /api/public/subscribe", s.subscribe)
 	mux.HandleFunc("POST /api/public/subscribe/resend", s.resend)
 	mux.HandleFunc("POST /api/public/subscribe/confirm", s.limited("confirm", 30, time.Hour, s.confirm))
@@ -45,6 +44,11 @@ func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 	es, _ := s.Settings.Email(r.Context())
 	var articles int
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM cms_pages WHERE kind='article' AND status='published'`).Scan(&articles)
+	resume, _, err := s.resumeSource(r.Context())
+	if err != nil {
+		s.Log.Error("resume source", "err", err)
+		resume = "none"
+	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	writeJSON(w, 200, map[string]any{
 		"site_url":               s.Cfg.PublicSiteURL,
@@ -55,7 +59,8 @@ func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 		"consent_text":           es.ConsentText,
 		"privacy_policy_url":     es.PrivacyPolicyURL,
 		"privacy_policy_version": es.PrivacyPolicyVersion,
-		"resume_available":       s.Cfg.ResumeFilePath != "",
+		"resume_available":       resume != "none",
+		"verification_ttl_hours": es.VerificationTTLHours,
 	})
 }
 
@@ -262,7 +267,10 @@ func (s *Server) otpHash(emailAddr, code string) []byte {
 }
 
 func (s *Server) resumeRequest(w http.ResponseWriter, r *http.Request) {
-	if s.Cfg.ResumeFilePath == "" {
+	if kind, _, err := s.resumeSource(r.Context()); err != nil {
+		s.internal(w, r, err)
+		return
+	} else if kind == "none" {
 		writeError(w, http.StatusNotFound, "resume download is not available")
 		return
 	}
@@ -330,21 +338,16 @@ func (s *Server) resumeVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeDownload(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.Signer.Verify("resume", r.URL.Query().Get("token")); err != nil || s.Cfg.ResumeFilePath == "" {
+	if _, err := s.Signer.Verify("resume", r.URL.Query().Get("token")); err != nil {
 		writeError(w, http.StatusForbidden, "this download link has expired; please verify your email again")
 		return
 	}
-	f, err := os.Open(s.Cfg.ResumeFilePath)
+	kind, key, err := s.resumeSource(r.Context())
 	if err != nil {
 		s.internal(w, r, err)
 		return
 	}
-	defer f.Close()
-	st, _ := f.Stat()
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", `attachment; filename="Sayantan-Chakraborty-Resume.pdf"`)
-	w.Header().Set("Cache-Control", "private, no-store")
-	http.ServeContent(w, r, filepath.Base(s.Cfg.ResumeFilePath), st.ModTime(), f)
+	s.serveResume(w, r, kind, key)
 }
 
 // --- content --------------------------------------------------------------------
@@ -421,7 +424,8 @@ func (s *Server) targetLive(r *http.Request, to string) bool {
 	return err == nil
 }
 
-var staticPaths = []string{"/", "/blog", "/videos", "/privacy", "/terms", "/ai-policy"}
+// The legal pages are CMS pages, listed with the other pages and a lastmod.
+var staticPaths = []string{"/", "/blog", "/videos"}
 
 func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.Content.Sitemap(r.Context())
@@ -476,28 +480,54 @@ Sitemap: %s/sitemap.xml
 }
 
 // llms implements the llms.txt convention: a concise, link-rich summary for
-// answer engines.
+// answer engines, from the editable site content.
 func (s *Server) llms(w http.ResponseWriter, r *http.Request) {
+	c, err := s.SiteContent.PublicContent(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
 	site := s.Cfg.PublicSiteURL
+	id := c.Identity
 	var b strings.Builder
-	b.WriteString("# Sayantan Chakraborty — Oracle DBA & Database Reliability Engineer\n\n")
-	b.WriteString("> Portfolio of Sayantan Chakraborty, an Oracle Database Administrator and Database Reliability Engineer (11+ years, Bangalore, India) " +
-		"specialising in Oracle RAC, Data Guard, GoldenGate, RMAN, OEM, Oracle EBS, PostgreSQL/Patroni, high availability, disaster recovery and automation with Ansible and Terraform.\n\n")
+	fmt.Fprintf(&b, "# %s — %s\n\n", id.Name, id.ShortRole)
+	fmt.Fprintf(&b, "> %s\n\n", c.SEO.LLMsSummary)
 	b.WriteString("## Key pages\n")
 	fmt.Fprintf(&b, "- [Home and profile](%s/): experience, projects, expertise and contact\n", site)
-	fmt.Fprintf(&b, "- [Articles](%s/blog): technical writing on Oracle and database reliability\n", site)
-	fmt.Fprintf(&b, "- [Videos](%s/videos): YouTube channel @csayantan\n", site)
+	fmt.Fprintf(&b, "- [Articles](%s/blog): %s\n", site, c.SEO.BlogDescription)
+	fmt.Fprintf(&b, "- [Videos](%s/videos): %s\n", site, c.SEO.VideosDescription)
 	fmt.Fprintf(&b, "- [AI policy](%s/ai-policy): how AI systems may use this content\n", site)
 	fmt.Fprintf(&b, "- [Privacy (DPDP)](%s/privacy) and [Terms](%s/terms)\n", site, site)
-	b.WriteString("\n## Profiles\n- LinkedIn: https://www.linkedin.com/in/sayantan-chakraborty-y2022\n- GitHub: https://github.com/ust-sayantan\n- YouTube: https://www.youtube.com/@csayantan\n")
+	var profiles strings.Builder
+	for _, l := range []struct{ label, url string }{{"LinkedIn", id.LinkedInURL}, {"GitHub", id.GitHubURL}, {"YouTube", id.YouTubeURL}} {
+		if l.url != "" {
+			fmt.Fprintf(&profiles, "- %s: %s\n", l.label, l.url)
+		}
+	}
+	for _, l := range id.OtherLinks {
+		fmt.Fprintf(&profiles, "- %s: %s\n", l.Label, l.URL)
+	}
+	if profiles.Len() > 0 {
+		b.WriteString("\n## Profiles\n" + profiles.String())
+	}
 	if pages, _, err := s.Content.List(r.Context(), content.ListFilter{Kind: "article", Status: "published", Limit: 50}); err == nil && len(pages) > 0 {
 		b.WriteString("\n## Articles\n")
 		for _, p := range pages {
 			fmt.Fprintf(&b, "- [%s](%s%s): %s\n", p.Title, site, p.Path, strings.ReplaceAll(p.Excerpt, "\n", " "))
 		}
 	}
+	if len(c.Videos.Items) > 0 {
+		b.WriteString("\n## Videos\n")
+		for _, v := range c.Videos.Items {
+			fmt.Fprintf(&b, "- [%s](https://www.youtube.com/watch?v=%s)", v.Title, v.YouTubeID)
+			if v.Description != "" {
+				b.WriteString(": " + v.Description)
+			}
+			b.WriteString("\n")
+		}
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	_, _ = w.Write([]byte(b.String()))
 }
 

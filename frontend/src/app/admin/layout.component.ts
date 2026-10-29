@@ -13,6 +13,11 @@ import { AuthService } from './auth.service';
         <div class="a-logo"><b>{{ '{' }}y{{ '}' }}</b> Portfolio Admin</div>
         <nav class="a-nav">
           <a routerLink="/admin" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">⌂ Dashboard</a>
+          <div class="group">Site content</div>
+          <a routerLink="/admin/site/home" routerLinkActive="active">◧ Home page</a>
+          <a routerLink="/admin/site/profile" routerLinkActive="active">◉ Site profile</a>
+          <a routerLink="/admin/site/videos" routerLinkActive="active">▷ Videos</a>
+          <a routerLink="/admin/site/legal" routerLinkActive="active">§ Legal pages</a>
           <div class="group">Content</div>
           <a routerLink="/admin/content" routerLinkActive="active" [queryParams]="{ kind: 'article' }">✎ Blog articles</a>
           <a routerLink="/admin/content" [queryParams]="{ kind: 'page' }">▤ Pages</a>

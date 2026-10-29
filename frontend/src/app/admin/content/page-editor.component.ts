@@ -18,6 +18,9 @@ const BLOCKS: Array<{ type: Block['type']; label: string }> = [
   { type: 'divider', label: 'Divider' }, { type: 'html', label: 'HTML' },
 ];
 
+// Linked from the footer and the newsletter consent: editable, never deleted, unpublished or renamed (D21).
+const LEGAL_PATHS = ['/privacy', '/terms', '/ai-policy'];
+
 function slugify(s: string) {
   return s.normalize('NFKD').toLowerCase().replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 }
@@ -33,15 +36,24 @@ function slugify(s: string) {
           @if (d.id) { <span class="pill" [class]="'pill ' + (d.status === 'published' ? 'verified' : 'pending')">{{ d.status }}</span> <span class="a-muted a-mono">{{ d.path }}</span> }</div>
         <div class="a-row">
           <button class="ab" type="button" (click)="mode.set(mode() === 'edit' ? 'preview' : 'edit')">{{ mode() === 'edit' ? 'Preview' : 'Back to editing' }}</button>
-          <button class="ab" type="button" [disabled]="busy()" (click)="save()">Save draft</button>
+          <button class="ab" type="button" [disabled]="busy()" (click)="save()">{{ d.status === 'published' ? 'Save changes (live)' : 'Save draft' }}</button>
           @if (d.status === 'published') {
-            <button class="ab" type="button" [disabled]="busy()" (click)="unpublish()">Unpublish</button>
+            @if (!legal()) { <button class="ab" type="button" [disabled]="busy()" (click)="unpublish()">Unpublish</button> }
             <a class="ab" [href]="d.path" target="_blank" rel="noopener">View live</a>
           } @else {
             <button class="ab primary" type="button" [disabled]="busy()" (click)="publishOpen.set(true)">Publish…</button>
           }
         </div>
       </div>
+      @if (legal()) {
+        <div class="a-warn" style="margin-bottom:14px">
+          This legal page is linked from the footer and newsletter consent. You can edit its text; it can't be deleted, unpublished or renamed.
+          Every saved version is kept under <a routerLink="/admin/site/legal">Site content → Legal pages</a>.
+          @if (d.path === '/privacy') {
+            <br />After changing it, update the privacy policy version in <a routerLink="/admin/email/settings">Subscribers &amp; Email → Settings</a>.
+          }
+        </div>
+      }
       @if (error()) { <p class="a-err" role="alert">{{ error() }}</p> }
       @if (notice()) { <p class="a-ok">{{ notice() }}</p> }
 
@@ -60,7 +72,7 @@ function slugify(s: string) {
             <section class="a-card a-form">
               <label>Title<input name="title" [(ngModel)]="d.title" (ngModelChange)="autoSlug($event)" maxlength="200" required /></label>
               <div class="two">
-                <label>URL slug<input name="slug" [(ngModel)]="d.slug" (ngModelChange)="slugTouched = true" class="a-mono" /></label>
+                <label>URL slug<input name="slug" [(ngModel)]="d.slug" (ngModelChange)="slugTouched = true" class="a-mono" [readonly]="legal()" /></label>
                 <label>Type<select name="kind" [(ngModel)]="d.kind" [disabled]="!!d.id"><option value="article">Article (/blog/…)</option><option value="page">Page (/…)</option></select></label>
               </div>
               <label>Summary / excerpt<textarea name="excerpt" rows="2" [(ngModel)]="d.excerpt" maxlength="500"></textarea></label>
@@ -178,13 +190,13 @@ function slugify(s: string) {
                 <label>Tags (comma separated)<input name="tag" [(ngModel)]="d.tags" /></label>
               </section>
             }
-            @if (d.id) { <button class="ab danger" type="button" (click)="remove()">Delete {{ d.kind }}</button> }
+            @if (d.id && !legal()) { <button class="ab danger" type="button" (click)="remove()">Delete {{ d.kind }}</button> }
           </aside>
         </div>
       }
 
       @if (publishOpen()) {
-        <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && publishOpen.set(false)">
+        <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? publishOpen.set(false) : null">
           <div class="a-modal a-form" role="dialog" aria-modal="true" aria-labelledby="pub-t">
             <h3 id="pub-t" style="margin:0">Publish “{{ d.title }}”</h3>
             <p style="margin:0">It goes live at <span class="a-mono">{{ previewPath() }}</span> and is added to the sitemap and llms.txt.</p>
@@ -213,6 +225,10 @@ export class PageEditorComponent {
   readonly blockTypes = BLOCKS;
   readonly heroTypes: Array<{ v: Hero['type']; label: string }> = [
     { v: 'none', label: 'No hero' }, { v: 'image', label: 'Image' }, { v: 'video', label: 'Video' }, { v: 'youtube', label: 'YouTube' }];
+  readonly legal = computed(() => {
+    const d = this.d();
+    return !!d?.id && d.kind === 'page' && LEGAL_PATHS.includes(d.path);
+  });
   readonly previewPath = computed(() => {
     const d = this.d();
     if (!d) return '';
@@ -300,7 +316,7 @@ export class PageEditorComponent {
         this.d.set(this.fromPage(p));
         this.slugTouched = true;
         if (!d.id) this.router.navigate(['/admin/content', p.id], { replaceUrl: true });
-        if (then) then(); else this.notice.set('Draft saved.');
+        if (then) then(); else this.notice.set(p.status === 'published' ? 'Changes saved. They are live now.' : 'Draft saved.');
       },
       error: (e) => { this.busy.set(false); this.error.set(errMsg(e)); },
     });

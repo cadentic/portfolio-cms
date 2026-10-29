@@ -263,6 +263,36 @@ func (s *Store) save(ctx context.Context, key string, v any, actor string) error
 	return err
 }
 
+// Meta records when and by whom a settings row was last written.
+type Meta struct {
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+// Raw reads one settings row as stored. found is false when there is no row.
+// q may be a transaction.
+func Raw(ctx context.Context, q store.DB, key string) (raw []byte, meta Meta, found bool, err error) {
+	err = q.QueryRow(ctx, `SELECT value, updated_at, coalesce(updated_by,'') FROM app_settings WHERE key=$1`, key).
+		Scan(&raw, &meta.UpdatedAt, &meta.UpdatedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, Meta{}, false, nil
+	}
+	if err != nil {
+		return nil, Meta{}, false, err
+	}
+	return raw, meta, true, nil
+}
+
+// PutRaw upserts one settings row and returns its new meta. q may be a
+// transaction. It does not invalidate any Store cache.
+func PutRaw(ctx context.Context, q store.DB, key string, raw []byte, actor string) (Meta, error) {
+	var m Meta
+	err := q.QueryRow(ctx, `INSERT INTO app_settings (key, value, updated_by) VALUES ($1,$2,$3)
+		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now(), updated_by=EXCLUDED.updated_by
+		RETURNING updated_at, coalesce(updated_by,'')`, key, raw, actor).Scan(&m.UpdatedAt, &m.UpdatedBy)
+	return m, err
+}
+
 func (s *Store) SaveEmail(ctx context.Context, e Email, actor string) error {
 	if err := e.Validate(); err != nil {
 		return fmt.Errorf("invalid email settings: %w", err)

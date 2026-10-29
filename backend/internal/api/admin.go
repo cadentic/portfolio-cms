@@ -100,6 +100,9 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/admin/pages/{id}/unpublish", s.unpublishPage)
 	m.HandleFunc("POST /api/admin/pages/markdown", s.markdownToBlocks)
 	s.mediaRoutes(m)
+	s.siteContentRoutes(m)
+	s.resumeRoutes(m)
+	s.pageVersionRoutes(m)
 
 	m.HandleFunc("GET /api/admin/contact-messages", s.listContactMessages)
 	m.HandleFunc("POST /api/admin/contact-messages/{id}/forward", s.forwardContactMessage)
@@ -974,8 +977,8 @@ func (s *Server) createPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.AuthorName == nil {
-		es, _ := s.Settings.Email(r.Context())
-		in.AuthorName = &es.SenderName
+		name := s.ownerName(r)
+		in.AuthorName = &name
 	}
 	p, err := s.Content.Create(r.Context(), in, actor(r))
 	if err != nil {
@@ -991,22 +994,28 @@ func (s *Server) updatePage(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	p, err := s.Content.Update(r.Context(), r.PathValue("id"), in)
+	p, changed, err := s.Content.Update(r.Context(), r.PathValue("id"), in, actor(r))
 	if errors.Is(err, content.ErrNotFound) {
 		writeError(w, 404, err.Error())
+		return
+	}
+	if errors.Is(err, content.ErrProtected) {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
-	s.audit(r, "page.update", "page", p.ID, nil)
+	if len(changed) > 0 {
+		s.audit(r, "page.update", "page", p.ID, map[string]any{"changed": changed})
+	}
 	writeJSON(w, 200, p)
 }
 
 func (s *Server) deletePage(w http.ResponseWriter, r *http.Request) {
 	if err := s.Content.Delete(r.Context(), r.PathValue("id")); err != nil {
-		s.internal(w, r, err)
+		s.pageErr(w, r, err)
 		return
 	}
 	s.audit(r, "page.delete", "page", r.PathValue("id"), nil)
@@ -1047,10 +1056,22 @@ func (s *Server) publishPage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+// pageErr maps a missing page to 404 and a protected legal page to 409.
+func (s *Server) pageErr(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, content.ErrNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, content.ErrProtected):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		s.internal(w, r, err)
+	}
+}
+
 func (s *Server) unpublishPage(w http.ResponseWriter, r *http.Request) {
 	p, err := s.Content.Unpublish(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeError(w, 404, "page not found")
+		s.pageErr(w, r, err)
 		return
 	}
 	s.audit(r, "page.unpublish", "page", p.ID, nil)
