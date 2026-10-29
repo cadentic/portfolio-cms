@@ -87,7 +87,7 @@ app.get('/app-config.json', (_req, res) => {
 // --- API proxy ---------------------------------------------------------------
 
 const hopByHop = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
-  'transfer-encoding', 'upgrade', 'host', 'content-length', 'content-encoding',
+  'transfer-encoding', 'upgrade', 'host', 'content-length', 'content-encoding', 'expect',
   // Set by this server only; never forward a client's own value.
   'x-client-ip', 'x-serverless-authorization']);
 
@@ -185,6 +185,10 @@ app.use(
     },
   }),
 );
+
+// Uploaded media lives in a private bucket behind the API. Files baked into
+// the image (public/media) are served by the static handler above first.
+app.use('/media', (req, res, next) => (req.method === 'GET' || req.method === 'HEAD' ? proxy(req, res, next) : next()));
 
 app.use((req, res, next) => {
   angularApp

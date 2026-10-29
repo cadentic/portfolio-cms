@@ -608,7 +608,7 @@ class DatabaseTest(unittest.TestCase):
     def test_1_copy_to_vps_and_back(self):
         src = cm.info(self.a)
         self.assertGreater(src["tables"], 20)
-        latest = max(f.stem for f in (cm.REPO / "backend/internal/store/migrations").glob("*.sql"))
+        latest = max(p.stem for p in (Path(__file__).resolve().parents[2] / "backend/internal/store/migrations").glob("*.sql"))
         self.assertEqual(src["migration"], latest)
         # Neon -> VPS container, replacing what the fresh stack created.
         with self.assertRaises(cm.Fail):

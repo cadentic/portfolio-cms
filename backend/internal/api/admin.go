@@ -99,6 +99,7 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/admin/pages/{id}/publish", s.publishPage)
 	m.HandleFunc("POST /api/admin/pages/{id}/unpublish", s.unpublishPage)
 	m.HandleFunc("POST /api/admin/pages/markdown", s.markdownToBlocks)
+	s.mediaRoutes(m)
 
 	m.HandleFunc("GET /api/admin/contact-messages", s.listContactMessages)
 	m.HandleFunc("POST /api/admin/contact-messages/{id}/forward", s.forwardContactMessage)

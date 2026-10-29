@@ -70,3 +70,18 @@ export interface Paged<T> {
   items: T[];
   total: number;
 }
+
+export interface MediaItem {
+  id: string;
+  url: string;
+  kind: 'image' | 'video' | 'file';
+  alt: string;
+  caption: string;
+  width: number | null;
+  height: number | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  filename: string | null;
+  source: string | null;
+  created_at: string;
+}
