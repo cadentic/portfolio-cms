@@ -20,7 +20,7 @@ If a port is already taken, copy `.env.example` to `.env` and change `AUTH_PORT`
 | Service | What you need |
 | --- | --- |
 | **Neon** | A project on **PostgreSQL 18** with a database named `portfolio`. Copy the *direct* connection string: in Connect, turn "Connection pooling" off so the host has no `-pooler`. Do not create tables: the API runs the migrations on first start, including the imported WordPress drafts. |
-| **Firebase** | A project with Authentication → Google sign-in enabled, `cadentic.dev` added to Authorized domains, and a Web app (gives the API key and auth domain). |
+| **Firebase** | A project with Authentication → Google sign-in enabled, the site's hostname (`cadentic.dev`, or the subdomain such as `profile.cadentic.dev`) added to Authorized domains, and a Web app (gives the API key and auth domain). |
 | **Brevo** and **Mailjet** | An API key from each, and `cadentic.dev` added as a sending domain in both (they show the DKIM records to copy). |
 | **Cloudflare** | The `cadentic.dev` zone id and an API token with Zone → DNS → Edit. |
 | **Where it runs** | One of: Google Cloud (project with billing; `gcloud auth login` and `gcloud auth application-default login`; verify `cadentic.dev` in Search Console), Azure (`az login`; `az extension add --name containerapp`), or a VPS with root SSH key login (a Bluehost VPS or dedicated server with plain Ubuntu 22.04+, Debian 12+ or AlmaLinux/Rocky 9+, no cPanel; Bluehost shared hosting cannot run Docker). |
@@ -33,6 +33,25 @@ repository inside WSL (`cd ~ && git clone ...`), not under `/mnt/c`: Ansible ign
 in a Windows folder.
 
 ## 2. Fill in the secrets
+
+The easy way is `installSetup.py`. It creates (or updates) `infra/terraform/secret.tfvars`, takes
+any setting as a flag, asks for whatever is still missing, generates the random secrets, and can
+run the deploy at the end:
+
+```sh
+python3 installSetup.py                                    # asks for everything it needs
+python3 installSetup.py --target vps --site-host profile --vps-ipv4 203.0.113.10
+python3 installSetup.py --target gcp --site-host profile --deploy
+python3 installSetup.py --help                             # every flag
+```
+
+Secrets can also come from environment variables named `SETUP_<SETTING>` (for example
+`SETUP_CLOUDFLARE_API_TOKEN`), which keeps them out of the shell history. `--dry-run` shows the
+changes without writing; `--non-interactive` fails instead of asking. The previous file is kept as
+`secret.backup-<time>.tfvars` (git-ignored). Writing the file works from PowerShell too; the deploy
+itself needs WSL.
+
+Or by hand:
 
 ```sh
 cp infra/terraform/secret.tfvars.example infra/terraform/secret.tfvars
@@ -50,6 +69,8 @@ Edit `infra/terraform/secret.tfvars` (it is git-ignored) and set at least:
 - `gcp_project_id` / `gcp_region`, **or** `azure_subscription_id` / `azure_location` / `acr_name`,
   **or** `vps_ipv4` / `vps_ssh_user` (plus `vps_local_db = true` and `vps_db_password` to run
   PostgreSQL on the server instead of Neon)
+- `site_host`: leave empty to serve the site on `cadentic.dev` (and www), or set a subdomain such
+  as `profile.cadentic.dev` (see [Site on a subdomain](#site-on-a-subdomain))
 - `media_storage` (`gcs` or `azure`) and the bucket name, `media_gcs_bucket` or
   `media_azure_account`. A site outside the bucket's cloud (a VPS, or Azure with a Google bucket)
   also needs `media_access_key = true`.
@@ -77,13 +98,35 @@ Caddy is restarted after the DNS change and usually has it within a minute.
 
 ## 4. After the first deploy
 
-1. Sign in at https://cadentic.dev/admin.
+1. Sign in at https://cadentic.dev/admin (or https://profile.cadentic.dev/admin on a subdomain).
 2. Add the Brevo and Mailjet webhooks (URLs in [docs/deploy.md](docs/deploy.md#4-after-the-first-deploy)).
 3. Send a test email from each provider (Subscribers & Email → Providers → Test send).
 4. Copy the WordPress images into the media bucket (once):
    `python3 tools/cloudmigrate/cloudmigrate.py media copy frontend/public/media gcs` (or `azure`, or `vps`).
 5. Review the imported WordPress drafts under Pages in the admin and publish the ones you want.
    Fix or delete `/about` first: it is an old resume with personal contact details.
+
+## Site on a subdomain
+
+To serve the site on `profile.cadentic.dev` while the email records stay on `cadentic.dev`:
+
+```sh
+python3 installSetup.py --site-host profile           # sets site_host = "profile.cadentic.dev"
+cd infra/ansible && ansible-playbook deploy.yml -e target=vps   # or gcp, or azure
+```
+
+- `domain` stays `cadentic.dev`: it is the Cloudflare zone and the sending domain. SPF, DMARC and
+  the Brevo/Mailjet DKIM records stay on it and do not change.
+- Only the site records move: a CNAME (Cloud Run, Azure, plus Azure's `asuid.profile` TXT) or an A
+  record (VPS) on `profile.cadentic.dev`. Terraform removes the old site records on `cadentic.dev`
+  and `www`, and leaves anything else on the apex alone.
+- No `www.profile...` by default; `site_www = true` (or `--www yes`) adds it.
+- Add `profile.cadentic.dev` to Firebase Authorized domains, and move the Brevo and Mailjet
+  webhooks to `https://webhook:<secret>@profile.cadentic.dev/api/webhooks/...`.
+- On Google Cloud, verifying `cadentic.dev` in Search Console covers the subdomain.
+- Canonical and Open Graph URLs, the sitemap and links in emails all follow the new hostname.
+
+Going back is the same with `--site-host @`.
 
 ## Updating
 

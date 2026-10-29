@@ -21,6 +21,11 @@ would stop them renewing. The `dns/` Terraform root owns every record and
 points the site records at whichever target was deployed last; the mail
 records (SPF, DKIM, DMARC) never change.
 
+The site can be served on the domain itself (`cadentic.dev` and `www`, the
+default) or on a subdomain such as `profile.cadentic.dev`; see
+[Site hostname](#site-hostname). The mail records stay on `cadentic.dev` either
+way.
+
 ## 1. One-time setup (by hand)
 
 1. **Neon**: create a project (PostgreSQL 18) and a database named `portfolio` in the Neon
@@ -29,7 +34,8 @@ records (SPF, DKIM, DMARC) never change.
    session locks, which the pooler does not support). It ends in `sslmode=require`. The API creates its tables on first start; Terraform and
    Ansible never create databases.
 2. **Firebase**: create a project, enable Authentication with the Google
-   provider, add `cadentic.dev` to Authentication → Settings → Authorized
+   provider, add the site's hostname (`cadentic.dev`, or `site_host` such as
+   `profile.cadentic.dev`) to Authentication → Settings → Authorized
    domains, and register a Web app to get the API key and auth domain.
 3. **Brevo** (primary) and **Mailjet** (secondary): create API keys, and add
    `cadentic.dev` as a sending domain in both. Copy the DKIM and verification
@@ -55,6 +61,22 @@ records (SPF, DKIM, DMARC) never change.
    endings behave.
 
 ## 2. Secrets
+
+`python3 installSetup.py` writes the file for you: it starts from
+`secret.tfvars.example` (or the existing file), takes any setting as a flag or
+a `SETUP_<SETTING>` environment variable, asks for whatever the chosen target
+still needs, generates `app_secret`, the webhook secrets and (with
+`--vps-local-db`) `vps_db_password`, and sets `media_access_key` when the site
+and the bucket are in different clouds. Values already in the file are kept.
+`--deploy` runs the playbook afterwards (from Linux or WSL); `--dry-run` only
+shows the changes; `--help` lists every flag.
+
+```sh
+python3 installSetup.py --target azure --site-host profile \
+  --azure-subscription-id <id> --media-storage azure --media-azure-account cadenticmedia
+```
+
+By hand:
 
 ```sh
 cp infra/terraform/secret.tfvars.example infra/terraform/secret.tfvars
@@ -91,7 +113,7 @@ The playbook:
    on a VPS: installs Docker if needed, copies the images, `compose.yml`,
    `Caddyfile` and `.env` to `vps_dir` (default `/opt/portfolio`) and starts the stack,
 4. smoke-tests the service,
-5. points the domain at it (`dns/` root) and, on Azure, issues the managed
+5. points the site hostname at it (`dns/` root) and, on Azure, issues the managed
    certificates; on a VPS it restarts Caddy so the certificate is requested
    straight away. `-e switch_dns=false` skips this step.
 
@@ -117,6 +139,10 @@ python3 tools/cloudmigrate/cloudmigrate.py dns adopt gcp   # or azure
 ```
 
 ## 4. After the first deploy
+
+In this section `cadentic.dev` stands for the site hostname: use
+`profile.cadentic.dev` (or whatever `site_host` is) when the site is on a
+subdomain.
 
 1. Sign in at `https://cadentic.dev/admin` with an account listed in
    `admin_emails`.
@@ -184,6 +210,37 @@ python3 tools/cloudmigrate/cloudmigrate.py media copy frontend/public/media gcs 
 (Neon ↔ the VPS container) with the old one read-only during the copy, checks
 every table, and switches DNS last. See
 [tools/cloudmigrate/README.md](../tools/cloudmigrate/README.md).
+
+## Site hostname
+
+`domain` in `secret.tfvars` is the Cloudflare zone and the email sending
+domain. `site_host` says where the site is served:
+
+| `site_host` | Site URL | Site records Terraform manages |
+| --- | --- | --- |
+| `""` (default) | `https://cadentic.dev`, plus `www` | Cloud Run: 4 A + 4 AAAA on the apex, `www` CNAME. Azure: apex A, `www` CNAME, two `asuid` TXT. VPS: apex A (+AAAA), `www` CNAME. |
+| `"profile.cadentic.dev"` | `https://profile.cadentic.dev` | Cloud Run: `profile` CNAME to `ghs.googlehosted.com`. Azure: `profile` CNAME to the web app and `asuid.profile` TXT. VPS: `profile` A (+AAAA). |
+
+`site_www = true` adds `www.<site_host>`; unset, it is on for the apex and off
+for a subdomain. The hostname must be the domain or a name under it, since
+Terraform only manages that one Cloudflare zone.
+
+What follows the hostname: `PUBLIC_SITE_URL` (canonical, Open Graph and
+JSON-LD URLs, the sitemap, robots.txt, links in emails and the MCP OAuth
+issuer), the Angular SSR allowed hosts, the Cloud Run domain mappings, the
+Azure custom domains and certificates, and the hostnames Caddy serves. What
+stays on `domain`: SPF, DMARC, the DKIM and verification records in
+`email_dns_records`, and `email_from_address`. Records on the apex that
+Terraform did not create (another site, a redirect) are left alone.
+
+Switching between the apex and a subdomain is a normal deploy: change
+`site_host` (`python3 installSetup.py --site-host profile`, or `--site-host @`
+to go back) and run the playbook. The dns/ root removes the old site records
+and creates the new ones; on Azure the new hostname is added to the app after
+DNS points at it. Then update the Firebase authorized domain and the Brevo and
+Mailjet webhook URLs, and add the MCP connector in Claude again with the new
+URL (the OAuth issuer is the site URL). Imported WordPress pages use site-relative canonical URLs
+(migration 0006), so they follow the hostname too.
 
 ## Email authentication
 

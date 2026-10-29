@@ -197,12 +197,13 @@
           loop_control: { label: "{{ item.name }}" }
           changed_when: true
 
-        # Azure adds a hostname only after checking its DNS records, so on the
-        # first deploy the hostnames wait until the dns/ root has run.
-        - name: Check whether the domain is already bound (Azure)
+        # Azure adds a hostname only after checking its DNS records, so a new
+        # hostname (first deploy, or a new site_host) waits until the dns/ root
+        # has run. Hostnames already on the app stay.
+        - name: Hostnames already on the web app (Azure)
           when: target == 'azure'
           ansible.builtin.command:
-            argv: "{{ tf_base + ['state', 'list', 'azurerm_container_app_custom_domain.site'] }}"
+            argv: "{{ tf_base + ['output', '-json', 'hostnames'] }}"
           register: azure_bound
           changed_when: false
           failed_when: false
@@ -212,7 +213,9 @@
             argv: "{{ tf_base + ['apply', '-input=false', '-auto-approve', '-var-file=' ~ tfvars,
                    '-var=api_image=' ~ registry.stdout ~ '/api:' ~ image_tag,
                    '-var=web_image=' ~ registry.stdout ~ '/web:' ~ image_tag]
-                   + (['-var=domain_ready=' ~ ((azure_bound.stdout | default('') | trim | length > 0) | string | lower)] if target == 'azure' else []) }}"
+                   + (['-var=domain_ready=false', '-var=ready_hosts=' ~ ((azure_bound.stdout | from_json
+                        if azure_bound.rc == 0 and azure_bound.stdout | trim | first | default('') == '[' else []) | to_json)]
+                      if target == 'azure' else []) }}"
           register: tf_apply
           changed_when: "'No changes.' not in tf_apply.stdout"
 

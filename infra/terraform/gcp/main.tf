@@ -27,7 +27,7 @@ variable "name" {
 variable "map_domain" {
   type        = bool
   default     = true
-  description = "Map the domain to the web service. Requires the domain to be verified in Google Search Console for the deploying account."
+  description = "Map the site host (and www, if served) to the web service. Requires the domain to be verified in Google Search Console for the deploying account; verifying the domain covers its subdomains."
 }
 
 provider "google" {
@@ -36,7 +36,6 @@ provider "google" {
 }
 
 locals {
-  site_url = "https://${var.domain}"
   # Every value here is stored in Secret Manager and mounted as an env var.
   secrets = merge({
     DATABASE_URL                 = var.database_url
@@ -240,7 +239,7 @@ resource "google_cloud_run_v2_service" "web" {
           PUBLIC_SITE_URL       = local.site_url
           API_INTERNAL_URL      = google_cloud_run_v2_service.api["api"].uri
           API_ID_TOKEN_AUDIENCE = google_cloud_run_v2_service.api["api"].uri
-          NG_ALLOWED_HOSTS      = "${var.domain},www.${var.domain},*.run.app"
+          NG_ALLOWED_HOSTS      = join(",", concat(local.site_hosts, ["*.run.app"]))
           SSR_API_ORIGIN        = "http://127.0.0.1:4000"
           TRUSTED_PROXY_HOPS    = "1" # Google front end
           FIREBASE_API_KEY      = var.firebase_api_key
@@ -269,20 +268,22 @@ resource "google_cloud_run_v2_service_iam_member" "web_public" {
 }
 
 resource "google_cloud_run_domain_mapping" "site" {
-  for_each = var.map_domain ? toset([var.domain, "www.${var.domain}"]) : toset([])
+  for_each = var.map_domain ? toset(local.site_hosts) : toset([])
   name     = each.value
   location = var.gcp_region
   metadata { namespace = var.gcp_project_id }
   spec { route_name = google_cloud_run_v2_service.web.name }
 }
 
-# Cloud Run domain mappings always use these Google front-end addresses. The
-# dns/ root creates the records; this root only describes them.
+# Cloud Run domain mappings always use these Google front-end addresses for
+# the zone apex, and a CNAME to ghs.googlehosted.com for any other hostname
+# (www, or a subdomain such as profile.cadentic.dev). The dns/ root creates the
+# records; this root only describes them.
 locals {
   site_records = var.map_domain ? concat(
-    [for ip in ["216.239.32.21", "216.239.34.21", "216.239.36.21", "216.239.38.21"] : { name = var.domain, type = "A", content = ip }],
-    [for ip in ["2001:4860:4802:32::15", "2001:4860:4802:34::15", "2001:4860:4802:36::15", "2001:4860:4802:38::15"] : { name = var.domain, type = "AAAA", content = ip }],
-    [{ name = "www.${var.domain}", type = "CNAME", content = "ghs.googlehosted.com" }],
+    [for ip in ["216.239.32.21", "216.239.34.21", "216.239.36.21", "216.239.38.21"] : { name = var.domain, type = "A", content = ip } if contains(local.site_hosts, var.domain)],
+    [for ip in ["2001:4860:4802:32::15", "2001:4860:4802:34::15", "2001:4860:4802:36::15", "2001:4860:4802:38::15"] : { name = var.domain, type = "AAAA", content = ip } if contains(local.site_hosts, var.domain)],
+    [for h in local.site_hosts : { name = h, type = "CNAME", content = "ghs.googlehosted.com" } if h != var.domain],
   ) : []
 }
 

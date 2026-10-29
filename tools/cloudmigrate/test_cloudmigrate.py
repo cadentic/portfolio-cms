@@ -234,6 +234,32 @@ class DeployTest(unittest.TestCase):
                 with mock.patch.object(cm, "dns_site_records", return_value=records):
                     self.assertEqual(cm.current_host(), host, records)
 
+    def test_current_host_on_a_subdomain(self):
+        # site_host = "profile.cadentic.dev": the site records sit on the subdomain, the mail records on the apex.
+        gcp = {"CNAME:profile.cadentic.dev:0": "ghs.googlehosted.com"}
+        azure = {"CNAME:profile.cadentic.dev:0": "portfolio-web.example.azurecontainerapps.io",
+                 "TXT:asuid.profile.cadentic.dev:0": "ABC123"}
+        vps = {"A:profile.cadentic.dev:0": "203.0.113.10"}
+        targets = {"gcp": gcp, "azure": azure, "vps": vps}
+        with mock.patch.object(cm, "target_site_records", side_effect=targets.get), \
+                mock.patch.object(cm, "dns_target", return_value=None):
+            for records, host in [(gcp, "gcp"), (vps, "vps"), (azure, "azure"),
+                                  # the asuid TXT record does not route visitors, so it does not decide the host
+                                  ({**azure, "TXT:asuid.profile.cadentic.dev:0": "OLD"}, "azure"),
+                                  # still on the apex while the targets already describe the subdomain: unknown
+                                  (VPS_RECORDS, None)]:
+                with mock.patch.object(cm, "dns_site_records", return_value=records):
+                    self.assertEqual(cm.current_host(), host, records)
+
+    def test_site_host(self):
+        self.assertEqual(cm.site_host({"domain": "cadentic.dev"}), "cadentic.dev")
+        self.assertEqual(cm.site_host({"domain": "cadentic.dev", "site_host": ""}), "cadentic.dev")
+        self.assertEqual(cm.site_host({"domain": "cadentic.dev", "site_host": "Profile.cadentic.dev"}),
+                         "profile.cadentic.dev")
+        notes = cm.after_move_notes("gcp", "vps", None, None, {"domain": "cadentic.dev",
+                                                              "site_host": "profile.cadentic.dev"})
+        self.assertIn("https://profile.cadentic.dev/admin", notes[0])
+
     def test_records_from_terraform(self):
         show = {"values": {"root_module": {"child_modules": [{"address": "module.dns", "resources": [
             {"type": "cloudflare_dns_record", "name": "site", "index": "A:cadentic.dev:0",

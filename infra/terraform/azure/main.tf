@@ -33,12 +33,17 @@ variable "acr_name" {
 variable "bind_domain" {
   type        = bool
   default     = true
-  description = "Add cadentic.dev and www to the web app. The Ansible playbook then issues the managed certificates."
+  description = "Add the site host (and www, if served) to the web app. The Ansible playbook then issues the managed certificates."
 }
 variable "domain_ready" {
   type        = bool
   default     = true
-  description = "The domain's DNS records already point here. Azure checks them before it adds a hostname, so the deploy playbook passes false on the first deploy, applies the dns/ root, then applies again with true."
+  description = "The site's DNS records already point here. Azure checks them before it adds a hostname, so the deploy playbook passes false (with ready_hosts) first, applies the dns/ root, then applies again with true."
+}
+variable "ready_hosts" {
+  type        = list(string)
+  default     = []
+  description = "With domain_ready = false: hostnames already on the web app, which stay. Set by the deploy playbook from the hostnames output."
 }
 
 provider "azurerm" {
@@ -55,7 +60,6 @@ provider "azurerm" {
 }
 
 locals {
-  site_url = "https://${var.domain}"
   secrets = merge({
     "database-url"                 = var.database_url
     "app-secret"                   = var.app_secret
@@ -84,9 +88,13 @@ locals {
     # Which managed identity the Azure SDK uses (the API's, below).
     AZURE_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
   })
-  hosts = var.bind_domain ? { apex = var.domain, www = "www.${var.domain}" } : {}
-  # Hostnames are added to the app only once DNS points here (see domain_ready).
-  bound_hosts = var.domain_ready ? local.hosts : {}
+  # Keyed apex and www for the zone apex and its www (the keys older states
+  # use), and by the hostname itself for a subdomain such as profile.cadentic.dev.
+  hosts = var.bind_domain ? {
+    for h in local.site_hosts : (h == var.domain ? "apex" : h == "www.${var.domain}" ? "www" : h) => h
+  } : {}
+  # A hostname is added to the app only once DNS points here (see domain_ready).
+  bound_hosts = var.domain_ready ? local.hosts : { for k, h in local.hosts : k => h if contains(var.ready_hosts, h) }
 }
 
 resource "azurerm_resource_group" "rg" {
@@ -279,7 +287,7 @@ resource "azurerm_container_app" "web" {
           NODE_ENV             = "production"
           PUBLIC_SITE_URL      = local.site_url
           API_INTERNAL_URL     = "https://${azurerm_container_app.api["api"].ingress[0].fqdn}"
-          NG_ALLOWED_HOSTS     = "${var.domain},www.${var.domain},*.azurecontainerapps.io"
+          NG_ALLOWED_HOSTS     = join(",", concat(local.site_hosts, ["*.azurecontainerapps.io"]))
           TRUSTED_PROXY_HOPS   = "1" # Container Apps ingress
           FIREBASE_API_KEY     = var.firebase_api_key
           FIREBASE_AUTH_DOMAIN = var.firebase_auth_domain
@@ -305,12 +313,15 @@ resource "azurerm_container_app" "web" {
 # output may not hold sensitive values).
 locals {
   domain_verification_id = nonsensitive(azurerm_container_app.web.custom_domain_verification_id)
-  site_records = var.bind_domain ? [
-    { name = var.domain, type = "A", content = azurerm_container_app_environment.env.static_ip_address },
-    { name = "asuid.${var.domain}", type = "TXT", content = local.domain_verification_id },
-    { name = "www.${var.domain}", type = "CNAME", content = azurerm_container_app.web.ingress[0].fqdn },
-    { name = "asuid.www.${var.domain}", type = "TXT", content = local.domain_verification_id },
-  ] : []
+  # The zone apex cannot hold a CNAME, so it gets the environment's address;
+  # any other hostname (www, or a subdomain such as profile.cadentic.dev) a
+  # CNAME to the app. Each needs its own asuid TXT record.
+  site_records = var.bind_domain ? flatten([for h in local.site_hosts : [
+    h == var.domain
+    ? { name = h, type = "A", content = azurerm_container_app_environment.env.static_ip_address }
+    : { name = h, type = "CNAME", content = azurerm_container_app.web.ingress[0].fqdn },
+    { name = "asuid.${h}", type = "TXT", content = local.domain_verification_id },
+  ]]) : []
 }
 
 # The hostnames are added here; the free managed certificates are issued by
@@ -331,6 +342,8 @@ output "web_app" { value = azurerm_container_app.web.name }
 output "web_url" { value = "https://${azurerm_container_app.web.ingress[0].fqdn}" }
 output "site_url" { value = local.site_url }
 output "hostnames" { value = values(local.bound_hosts) }
+# The zone apex validates its certificate over HTTP, other hostnames over CNAME.
+output "zone_apex" { value = var.domain }
 # Hostnames that still need adding once DNS points here (first deploy only).
 output "pending_hostnames" { value = [for k, h in local.hosts : h if !contains(keys(local.bound_hosts), k)] }
 output "webhook_urls" {
