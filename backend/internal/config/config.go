@@ -42,6 +42,20 @@ type Config struct {
 	GA4ID           string
 	BlogEnabled     bool
 
+	// Media storage: "local" (MEDIA_LOCAL_DIR), "gcs" or "azure". Buckets are
+	// private; files are served only through GET /media/{key}.
+	MediaStorage          string
+	MediaLocalDir         string
+	MediaMaxUploadBytes   int64
+	MediaGCSBucket        string
+	MediaGCSCredentials   string // service-account key JSON; empty uses the metadata server
+	MediaAzureAccount     string
+	MediaAzureContainer   string
+	MediaAzureSAS         string // empty uses the managed identity
+	AzureIdentityEndpoint string
+	AzureIdentityHeader   string
+	AzureClientID         string
+
 	// Provider base URL overrides (local mock server / tests only).
 	BrevoBaseURL   string
 	MailjetBaseURL string
@@ -77,6 +91,18 @@ func Load() (*Config, error) {
 		BrevoBaseURL:         os.Getenv("EMAIL_BREVO_BASE_URL"),
 		MailjetBaseURL:       os.Getenv("EMAIL_MAILJET_BASE_URL"),
 		ShutdownTimeout:      time.Duration(getInt("SHUTDOWN_TIMEOUT_SECONDS", 25)) * time.Second,
+
+		MediaStorage:          strings.ToLower(get("MEDIA_STORAGE", "local")),
+		MediaLocalDir:         get("MEDIA_LOCAL_DIR", "/data/media"),
+		MediaMaxUploadBytes:   int64(getInt("MEDIA_MAX_UPLOAD_MB", 30)) << 20,
+		MediaGCSBucket:        os.Getenv("MEDIA_GCS_BUCKET"),
+		MediaGCSCredentials:   os.Getenv("MEDIA_GCS_CREDENTIALS"),
+		MediaAzureAccount:     os.Getenv("MEDIA_AZURE_ACCOUNT"),
+		MediaAzureContainer:   os.Getenv("MEDIA_AZURE_CONTAINER"),
+		MediaAzureSAS:         os.Getenv("MEDIA_AZURE_SAS"),
+		AzureIdentityEndpoint: os.Getenv("IDENTITY_ENDPOINT"),
+		AzureIdentityHeader:   os.Getenv("IDENTITY_HEADER"),
+		AzureClientID:         os.Getenv("AZURE_CLIENT_ID"),
 	}
 	var errs []error
 	if c.DatabaseURL == "" {
@@ -90,6 +116,9 @@ func Load() (*Config, error) {
 	}
 	if len(c.AdminUIDs) == 0 && len(c.AdminEmails) == 0 {
 		errs = append(errs, errors.New("set ADMIN_UIDS and/or ADMIN_EMAILS to authorise the owner"))
+	}
+	if c.MediaMaxUploadBytes <= 0 {
+		errs = append(errs, errors.New("MEDIA_MAX_UPLOAD_MB must be positive"))
 	}
 	if c.IsProduction() {
 		if c.FirebaseEmulatorHost != "" {

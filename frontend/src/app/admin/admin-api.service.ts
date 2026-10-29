@@ -35,6 +35,13 @@ export class AdminApi {
     fd.append('file', file);
     return this.http.post<T>('/api/admin/' + path, fd);
   }
+  /** Multipart upload that reports progress events (for large media files). */
+  uploadWithProgress<T>(path: string, file: File, fields: Record<string, string> = {}) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    fd.append('file', file);
+    return this.http.post<T>('/api/admin/' + path, fd, { reportProgress: true, observe: 'events' });
+  }
   /** Downloads a CSV with the auth header (plain links can't carry it). */
   download(path: string, filename: string, p?: Params) {
     this.http.get('/api/admin/' + path, { params: this.params(p), responseType: 'blob' }).subscribe((blob) => {

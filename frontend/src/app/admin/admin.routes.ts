@@ -28,6 +28,7 @@ export const ADMIN_ROUTES: Routes = [
       },
       { path: 'content', loadComponent: () => import('./content/pages.component').then((m) => m.PagesComponent) },
       { path: 'content/:id', loadComponent: () => import('./content/page-editor.component').then((m) => m.PageEditorComponent) },
+      { path: 'media', loadComponent: () => import('./media/media-library.component').then((m) => m.MediaLibraryComponent) },
       { path: 'messages', loadComponent: () => import('./messages.component').then((m) => m.MessagesComponent) },
       { path: 'mcp', loadComponent: () => import('./mcp.component').then((m) => m.McpComponent) },
       { path: 'audit', loadComponent: () => import('./audit.component').then((m) => m.AuditComponent) },

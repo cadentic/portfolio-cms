@@ -34,6 +34,9 @@ x-api-env: &api-env
   EMAIL_BREVO_WEBHOOK_SECRET: local-brevo-webhook
   EMAIL_MAILJET_WEBHOOK_SECRET: local-mailjet-webhook
   RESUME_FILE_PATH: ${RESUME_FILE_PATH:-}
+  # Uploaded media. Local disk here; MEDIA_STORAGE=gcs|azure in the cloud.
+  MEDIA_STORAGE: local
+  MEDIA_LOCAL_DIR: /data/media
 
 services:
   db:
@@ -76,6 +79,7 @@ services:
     environment:
       <<: *api-env
       RUN_WORKER: "false"
+    volumes: [media:/data/media]
     depends_on:
       db: { condition: service_healthy }
     ports: ["127.0.0.1:${API_PORT:-8080}:8080"]
@@ -104,3 +108,4 @@ services:
 
 volumes:
   pgdata18:
+  media:

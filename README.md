@@ -38,6 +38,12 @@ The Delivery monitor in the console shows the attempts and the failover reason.
 `unknown` mode makes Brevo store the email and then time out, which is the case
 where the queue must not send a duplicate.
 
+Uploads (Admin → Media, or the Upload buttons in the page editor) are kept
+in the `media` Docker volume locally and in a private Google Cloud Storage
+bucket or Azure Blob container in the cloud (`MEDIA_STORAGE`, see
+[docs/configuration.md](docs/configuration.md)). Either way they are served
+from `/media/…` on the site's own domain.
+
 To add your resume download, mount the PDF into the `api` service and set
 `RESUME_FILE_PATH` (see `.env.example`).
 

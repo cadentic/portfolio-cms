@@ -16,6 +16,7 @@ import { AuthService } from './auth.service';
           <div class="group">Content</div>
           <a routerLink="/admin/content" routerLinkActive="active" [queryParams]="{ kind: 'article' }">✎ Blog articles</a>
           <a routerLink="/admin/content" [queryParams]="{ kind: 'page' }">▤ Pages</a>
+          <a routerLink="/admin/media" routerLinkActive="active">▣ Media</a>
           <a routerLink="/admin/messages" routerLinkActive="active">✉ Contact messages</a>
           <div class="group">Subscribers &amp; Email</div>
           <a class="sub" routerLink="/admin/email/subscribers" routerLinkActive="active">Subscribers</a>

@@ -1,10 +1,11 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Block, Hero, Page } from '../../core/models';
+import { Block, Hero, MediaItem, Page } from '../../core/models';
 import { BlocksComponent } from '../../shared/blocks.component';
 import { HeroMediaComponent } from '../../shared/hero-media.component';
 import { AdminApi, errMsg } from '../admin-api.service';
+import { MediaPickerComponent } from '../media/media-picker.component';
 
 type Kind = 'page' | 'article';
 interface Draft { id?: string; kind: Kind; title: string; slug: string; excerpt: string; hero: Hero; blocks: Block[];
@@ -23,7 +24,7 @@ function slugify(s: string) {
 
 @Component({
   selector: 'app-admin-page-editor',
-  imports: [FormsModule, RouterLink, BlocksComponent, HeroMediaComponent],
+  imports: [FormsModule, RouterLink, BlocksComponent, HeroMediaComponent, MediaPickerComponent],
   template: `
     @if (d(); as d) {
       <div class="a-row between" style="margin-bottom:14px">
@@ -75,11 +76,14 @@ function slugify(s: string) {
               @switch (d.hero.type) {
                 @case ('image') {
                   <label>Image URL<input name="hurl" [(ngModel)]="d.hero.url" placeholder="https://… or /media/…" /></label>
+                  <app-media-picker kind="image" [alt]="d.hero.alt ?? ''" (picked)="d.hero.url = $event.url; d.hero.alt = d.hero.alt || $event.alt" />
                   <label>Alt text (describe the image)<input name="halt" [(ngModel)]="d.hero.alt" required /></label>
                 }
                 @case ('video') {
-                  <label>Video URL (MP4/WebM)<input name="hurl" [(ngModel)]="d.hero.url" placeholder="https://…/video.mp4" /></label>
+                  <label>Video URL (MP4/WebM)<input name="hurl" [(ngModel)]="d.hero.url" placeholder="https://…/video.mp4 or /media/…" /></label>
+                  <app-media-picker kind="video" label="Upload video…" (picked)="d.hero.url = $event.url" />
                   <label>Poster image URL<input name="hposter" [(ngModel)]="d.hero.poster" /></label>
+                  <app-media-picker kind="image" label="Upload poster…" (picked)="d.hero.poster = $event.url" />
                 }
                 @case ('youtube') {
                   <label>YouTube URL or video ID<input name="hyt" [(ngModel)]="d.hero.youtube_id" placeholder="https://www.youtube.com/watch?v=…" /></label>
@@ -143,6 +147,8 @@ function slugify(s: string) {
               <div class="a-row" style="flex-wrap:wrap;gap:6px">
                 @for (t of blockTypes; track t.type) { <button class="ab sm" type="button" (click)="add(t.type)">+ {{ t.label }}</button> }
               </div>
+              <div class="a-row" style="gap:8px;flex-wrap:wrap"><span class="a-muted" style="font-size:.8rem">Add an image or PDF:</span>
+                <app-media-picker kind="inline" (picked)="insertMedia($event)" /></div>
               <p class="a-muted" style="margin:0;font-size:.75rem">Text supports **bold**, *italic*, \`code\` and [links](https://…).</p>
             </section>
           </div>
@@ -153,6 +159,7 @@ function slugify(s: string) {
               <label>SEO title <span class="a-muted">({{ (d.seo_title || d.title).length }}/60)</span><input name="st" [(ngModel)]="d.seo_title" [placeholder]="d.title" /></label>
               <label>Meta description <span class="a-muted">({{ (d.seo_description || d.excerpt).length }}/160)</span><textarea name="sd" rows="3" [(ngModel)]="d.seo_description" [placeholder]="d.excerpt"></textarea></label>
               <label>Social image (Open Graph)<input name="og" [(ngModel)]="d.og_image" placeholder="https://… 1200×630" /></label>
+              <app-media-picker kind="image" (picked)="d.og_image = $event.url" />
               <label>Canonical URL (only if published elsewhere first)<input name="can" [(ngModel)]="d.canonical" /></label>
               <label class="a-row"><input type="checkbox" name="ni" [(ngModel)]="d.noindex" /> Hide from search engines</label>
               <div class="a-section" aria-label="Search result preview">
@@ -166,6 +173,7 @@ function slugify(s: string) {
                 <h3 style="margin:0">Article details</h3>
                 <label>Author<input name="au" [(ngModel)]="d.author_name" /></label>
                 <label>Featured image (blog list and email)<input name="fi" [(ngModel)]="d.featured_image_url" /></label>
+                <app-media-picker kind="image" (picked)="d.featured_image_url = $event.url" />
                 <label>Categories (comma separated)<input name="cat" [(ngModel)]="d.categories" /></label>
                 <label>Tags (comma separated)<input name="tag" [(ngModel)]="d.tags" /></label>
               </section>
@@ -255,6 +263,18 @@ export class PageEditorComponent {
     if (type === 'callout') b.tone = 'info';
     if (type !== 'divider' && type !== 'html' && type !== 'list') b.text = '';
     this.d()?.blocks.push(b);
+  }
+  /** Appends an uploaded image (as a figure) or PDF (as a link) to the body. */
+  insertMedia(m: MediaItem) {
+    const d = this.d();
+    if (!d) return;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const html = m.kind === 'image'
+      ? `<figure><img src="${esc(m.url)}" alt="${esc(m.alt)}" loading="lazy"${m.width ? ` width="${m.width}" height="${m.height}"` : ''} />` +
+        (m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : '') + '</figure>'
+      : `<p><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.filename || 'Download PDF')}</a></p>`;
+    d.blocks.push({ type: 'html', html });
+    this.d.set({ ...d });
   }
   move(i: number, dir: number) {
     const bs = this.d()!.blocks;
