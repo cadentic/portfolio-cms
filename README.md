@@ -9,7 +9,8 @@ Go API with a durable email queue that fails over from Brevo to Mailjet.
 | Web | `frontend/` | Angular 22 with SSR. Public pages render on the server with SEO, Open Graph and JSON-LD. `/admin` is the owner console (client-rendered). The Node server also proxies `/api`, `/mcp` and `/oauth` to the API and sends a nonce-based CSP. |
 | API and worker | `backend/` | Go 1.25 + Postgres (Neon in production). Subscribers with double opt-in, consent records (DPDP), campaigns, templates, CMS content, MCP server with OAuth login, webhooks, and the email queue worker. |
 | Local stack | `docker-compose.yml` | Postgres, API, worker, web, a mock Brevo/Mailjet server and the Firebase Auth emulator. |
-| Deploy | `infra/` | Terraform for Google Cloud Run or Azure Container Apps, Cloudflare DNS (site, SPF, DKIM, DMARC), and an Ansible playbook that builds, pushes and applies. Secrets live in `infra/terraform/secret.tfvars`. |
+| Deploy | `infra/` | Terraform for Google Cloud Run, Azure Container Apps or any VPS (Docker Compose behind Caddy), a private media bucket (Google Cloud Storage or Azure Blob), Cloudflare DNS (site, SPF, DKIM, DMARC), and an Ansible playbook that builds, ships and applies. Secrets live in `infra/terraform/secret.tfvars`. |
+| Moves | `tools/cloudmigrate/` | Moves the site between hosts, the database between Neon and the VPS, and media between buckets, with checks at every step. |
 | Browser tests | `e2e/` | Playwright + axe: accessibility, phone layout and CMS usability. |
 
 ## Run it locally
@@ -25,6 +26,11 @@ docker compose up --build
 | http://localhost:4000 | The site |
 | http://localhost:4000/admin | Owner console. Sign in with `owner@cadentic.dev` / `localpass123` (change both in `.env`, see `.env.example`). |
 | http://localhost:8025 | Mock email providers: every "sent" email, buttons to fire delivery/bounce/complaint webhooks, and failure modes per provider. |
+
+The database is PostgreSQL 18, the same major version to pick on Neon. Its local
+data lives in the `portfolio-cms_pgdata18` volume. If you ran the stack before
+with PostgreSQL 17, the old `portfolio-cms_pgdata` volume is simply left unused;
+`docker volume rm portfolio-cms_pgdata` removes it (optional).
 
 Try the failover: open http://localhost:8025, set Brevo to `error500`,
 subscribe on the homepage, and watch the confirmation arrive through Mailjet.
@@ -72,14 +78,18 @@ the search, filter and sort parameters, CSV import/export, retention purges.
 
 ## Deploy
 
-See [docs/deploy.md](docs/deploy.md). In short: create the Neon database and
+Start with the one-page [DEPLOY.md](DEPLOY.md); full details are in
+[docs/deploy.md](docs/deploy.md). In short: create the Neon database and
 Firebase project yourself, copy `infra/terraform/secret.tfvars.example` to
 `secret.tfvars`, fill it in, then
 
 ```sh
 cd infra/ansible
-ansible-playbook deploy.yml -e target=gcp     # or target=azure
+ansible-playbook deploy.yml -e target=gcp     # or target=azure, or target=vps
 ```
+
+To move later (another cloud, a VPS, the database off Neon), see
+[tools/cloudmigrate](tools/cloudmigrate/README.md).
 
 ## Connect an AI assistant (MCP)
 
@@ -92,6 +102,6 @@ delivery stats. It cannot send email or see subscriber addresses.
 
 ## More
 
-- [docs/deploy.md](docs/deploy.md): cloud setup, DNS, email authentication (SPF, DKIM, DMARC), webhooks
+- [docs/deploy.md](docs/deploy.md): cloud and VPS setup, the media bucket and its permissions, DNS, email authentication (SPF, DKIM, DMARC), webhooks
 - [docs/operations.md](docs/operations.md): how delivery and failover work, alerts, replaying dead letters, resolving unknown acceptance, data retention
 - [docs/configuration.md](docs/configuration.md): every environment variable

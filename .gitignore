@@ -6,6 +6,9 @@
 !*.tfvars.example
 secret.tfvars
 **/.terraform/
+# Created by terraform init on the deploy machine; the deploy playbook refuses
+# to run with untracked files, so keep them out of git status.
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 # build
@@ -16,3 +19,10 @@ coverage/
 backend/bin/
 *.log
 .DS_Store
+
+# tools/cloudmigrate database dumps
+backups/
+
+# Written by the deploy playbook: the media bucket key for the site root.
+*.auto.tfvars.json
+__pycache__/

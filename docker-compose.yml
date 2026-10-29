@@ -5,6 +5,9 @@
 #   cp .env.example .env      # optional; defaults below work as-is
 #   docker compose up --build
 #
+#   A host port already in use (common on Windows, where Hyper-V reserves
+#   ranges)? Set DB_PORT, AUTH_PORT, MOCK_PORT or API_PORT in .env.
+#
 #   Site:            http://localhost:4000
 #   Admin:           http://localhost:4000/admin  (owner@cadentic.dev / localpass123 by default)
 #   Mock providers:  http://localhost:8025        (switch Brevo to "error500" to watch failover)
@@ -34,13 +37,16 @@ x-api-env: &api-env
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: portfolio
       POSTGRES_PASSWORD: portfolio
       POSTGRES_DB: portfolio
     ports: ["127.0.0.1:${DB_PORT:-5432}:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    # PostgreSQL 18, matching Neon. The 18+ image keeps data in a versioned
+    # subdirectory, so the volume mounts /var/lib/postgresql (not .../data).
+    # The volume has a new name so an old PostgreSQL 17 volume is never reused.
+    volumes: [pgdata18:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
       interval: 3s
@@ -52,14 +58,14 @@ services:
     environment:
       MOCK_WEBHOOK_BREVO_URL: http://webhook:local-brevo-webhook@api:8080/api/webhooks/brevo
       MOCK_WEBHOOK_MAILJET_URL: http://webhook:local-mailjet-webhook@api:8080/api/webhooks/mailjet
-    ports: ["127.0.0.1:8025:8025"]
+    ports: ["127.0.0.1:${MOCK_PORT:-8025}:8025"]
 
   auth:
     build: ./docker/firebase-auth
     environment:
       LOCAL_ADMIN_EMAIL: ${LOCAL_ADMIN_EMAIL:-owner@cadentic.dev}
       LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-localpass123}
-    ports: ["127.0.0.1:9099:9099"]
+    ports: ["127.0.0.1:${AUTH_PORT:-9099}:9099"]
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/ready"]
       interval: 3s
@@ -72,7 +78,7 @@ services:
       RUN_WORKER: "false"
     depends_on:
       db: { condition: service_healthy }
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:${API_PORT:-8080}:8080"]
 
   worker:
     build: { context: ./backend, target: api }
@@ -91,10 +97,10 @@ services:
       API_INTERNAL_URL: http://api:8080
       PUBLIC_SITE_URL: http://localhost:4000
       FIREBASE_PROJECT_ID: demo-cadentic
-      FIREBASE_AUTH_EMULATOR_URL: http://localhost:9099
+      FIREBASE_AUTH_EMULATOR_URL: http://localhost:${AUTH_PORT:-9099}
     depends_on:
       api: { condition: service_healthy }
     ports: ["127.0.0.1:4000:4000"]
 
 volumes:
-  pgdata:
+  pgdata18:

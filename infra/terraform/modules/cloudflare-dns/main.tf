@@ -1,5 +1,5 @@
-# Site records (pointing at Cloud Run or Container Apps) plus SPF, DMARC and
-# the provider DKIM records for Brevo and Mailjet.
+# Site records (pointing at Cloud Run, Container Apps or a VPS) plus SPF,
+# DMARC and the provider DKIM records for Brevo and Mailjet.
 terraform {
   required_providers {
     cloudflare = { source = "cloudflare/cloudflare", version = "~> 5.0" }
@@ -9,7 +9,7 @@ terraform {
 variable "zone_id" { type = string }
 variable "domain" { type = string }
 variable "site_records" {
-  description = "Records that point the site at its host. DNS-only: managed certificates on Cloud Run and Container Apps are validated over plain DNS."
+  description = "Records that point the site at its host. DNS-only: the managed certificates (Cloud Run, Container Apps, Caddy on a VPS) are validated over plain DNS."
   type        = list(object({ name = string, type = string, content = string }))
 }
 variable "email_dns_records" {
@@ -19,9 +19,14 @@ variable "dmarc_policy" { type = string }
 variable "dmarc_rua" { type = string }
 
 locals {
-  # Keys use only name, type and position so they are known at plan time even
-  # when the record content (an IP or verification id) is not yet.
-  site  = { for i, r in var.site_records : "${r.type}:${r.name}:${i}" => r }
+  # Site records are keyed by type, name and position among the records with
+  # that type and name. Moving the site to another host then edits records in
+  # place (the www CNAME keeps its key) instead of deleting and re-creating
+  # them, which Cloudflare would reject while the old record still exists.
+  site_groups = distinct([for r in var.site_records : "${r.type}:${r.name}"])
+  site = merge({}, [for g in local.site_groups : {
+    for i, r in [for x in var.site_records : x if "${x.type}:${x.name}" == g] : "${g}:${i}" => r
+  }]...)
   email = { for i, r in var.email_dns_records : "${r.type}:${r.name}:${i}" => r }
   dmarc = join("; ", compact(["v=DMARC1", "p=${var.dmarc_policy}", var.dmarc_rua != "" ? "rua=mailto:${var.dmarc_rua}" : "", "adkim=r", "aspf=r"]))
 }
