@@ -5,6 +5,7 @@ package mailer
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cadentic/portfolio-cms/backend/internal/email"
 	"github.com/cadentic/portfolio-cms/backend/internal/queue"
@@ -40,6 +41,7 @@ func (m *Mailer) Send(ctx context.Context, db store.DB, r Request) (string, erro
 		return "", fmt.Errorf("template %s: %w", r.Template, err)
 	}
 	es, _ := m.Settings.Email(ctx)
+	r.To.Name = displayName(r.To.Name)
 	vars := map[string]string{"site_name": siteName(es), "site_url": m.SiteURL, "email": r.To.Email,
 		"first_name": firstName(r.To.Name)}
 	for k, v := range r.Vars {
@@ -76,13 +78,27 @@ func siteName(es settings.Email) string {
 	return es.SenderName
 }
 
+// displayName drops a recipient name that carries a link or address, for the
+// same reason as firstName: it is shown in the recipient's To line.
+func displayName(name string) string {
+	if strings.ContainsAny(name, "/:@<>\r\n") || strings.Contains(strings.ToLower(name), "www.") {
+		return ""
+	}
+	return name
+}
+
+// firstName is the greeting name. Anyone can type a name into a public form
+// and have an acknowledgement sent to any address, so a "name" that looks like
+// a link, domain or address is replaced: the site never mails out
+// attacker-chosen URLs.
 func firstName(name string) string {
 	for i, c := range name {
 		if c == ' ' {
-			return name[:i]
+			name = name[:i]
+			break
 		}
 	}
-	if name == "" {
+	if name == "" || len([]rune(name)) > 40 || strings.ContainsAny(name, "./:@\\<>") {
 		return "there"
 	}
 	return name

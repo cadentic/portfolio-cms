@@ -26,6 +26,9 @@ import (
 
 const serverVersion = "1.0.0"
 
+// maxBatch caps JSON-RPC batches so one request cannot queue unbounded work.
+const maxBatch = 20
+
 var supportedVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 type Server struct {
@@ -79,7 +82,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(raw) > 0 && raw[0] == '[' {
 		var batch []rpcRequest
-		if err := json.Unmarshal(raw, &batch); err != nil {
+		if err := json.Unmarshal(raw, &batch); err != nil || len(batch) == 0 || len(batch) > maxBatch {
 			writeRPC(w, rpcResponse{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32600, "invalid batch"}})
 			return
 		}
