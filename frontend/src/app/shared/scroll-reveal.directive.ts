@@ -113,11 +113,15 @@ function countUp(el: HTMLElement) {
   const node = el.firstChild;
   if (!node || node.nodeType !== Node.TEXT_NODE || node !== el.lastChild) return;
   const text = node.nodeValue ?? '';
-  const m = /^(\D*)(\d+)(.*)$/s.exec(text);
+  // The value is owner-edited free text ("11+ years", "1,200 servers", "99.9%",
+  // "24x7"): only the first number counts, keeping any thousands separators.
+  const m = /^(\D*?)(\d{1,3}(?:,\d{3})+|\d+)(.*)$/s.exec(text);
   if (!m) return;
   const [, pre, num, post] = m;
-  const target = Number(num);
-  if (!target) return;
+  const target = Number(num.replace(/,/g, ''));
+  const fmt = (n: number) => (num.includes(',') ? n.toLocaleString('en-US') : String(n));
+  // "24x7", "24/7" and times read as one token, not a count.
+  if (!target || /^[x×/:]\d/i.test(post)) return;
   const win = el.ownerDocument.defaultView!;
   const duration = 1100;
   let start = 0;
@@ -127,7 +131,7 @@ function countUp(el: HTMLElement) {
     if (!start) start = t;
     const p = Math.min((t - start) / duration, 1);
     const eased = 1 - Math.pow(1 - p, 3);
-    last = p < 1 ? `${pre}${Math.round(target * eased)}${post}` : text;
+    last = p < 1 ? `${pre}${fmt(Math.round(target * eased))}${post}` : text;
     node.nodeValue = last;
     if (p < 1) win.requestAnimationFrame(step);
   };
