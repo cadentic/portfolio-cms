@@ -19,11 +19,33 @@ export function watchErrors(page: Page, origin: string) {
 
 /** WCAG 2.1 A/AA checks; serious and critical violations fail the test. */
 export async function expectAccessible(page: Page, exclude: string[] = []) {
+  await settleMotion(page);
   let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']);
   for (const sel of exclude) builder = builder.exclude(sel);
   const { violations } = await builder.analyze();
   const bad = violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(bad.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).slice(0, 3).join(', ')})`)).toEqual([]);
+}
+
+/**
+ * Scrolls through the page so every scroll-reveal element appears, then waits
+ * for entrance animations to finish. Contrast is then checked on content as
+ * visitors finally see it, not half-way through a fade (and nothing below the
+ * fold escapes the check by still being transparent).
+ */
+export async function settleMotion(page: Page) {
+  await page.evaluate(async () => {
+    const frame = () => new Promise((r) => setTimeout(r, 60));
+    for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight / 2) {
+      window.scrollTo({ top: y, behavior: 'instant' });
+      await frame();
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.reveal').length === 0, null, { timeout: 10_000 });
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+  );
 }
 
 export async function expectNoHorizontalScroll(page: Page) {

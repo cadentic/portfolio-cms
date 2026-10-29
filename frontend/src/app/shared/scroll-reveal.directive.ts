@@ -57,7 +57,8 @@ export class ScrollRevealDirective {
       host.querySelectorAll(REVEAL).forEach((el) => {
         if (seen.has(el)) return;
         seen.add(el);
-        if (inView(el)) return;
+        // Leave alone what is on screen already or not laid out (inside a closed <details>).
+        if (inView(el) || el.parentElement?.closest('details:not([open])')) return;
         const group = el.parentElement?.closest(STAGGER);
         if (group && el.parentElement === group) {
           const i = Array.prototype.indexOf.call(group.children, el);
