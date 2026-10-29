@@ -34,7 +34,14 @@ locals {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    # Account keys are off unless media_access_key is set, and the provider
+    # signs storage data-plane calls with a key, so it must not make any.
+    # Everything here goes through Azure Resource Manager instead.
+    storage {
+      data_plane_available = false
+    }
+  }
   subscription_id                = local.subscription_id
   resource_providers_to_register = ["Microsoft.Storage"]
 }
@@ -78,10 +85,14 @@ resource "azurerm_storage_account" "media" {
   }
 }
 
+# Renaming the container would delete it with every file, so Terraform refuses.
 resource "azurerm_storage_container" "media" {
   name                  = var.media_azure_container
   storage_account_id    = azurerm_storage_account.media.id
   container_access_type = "private"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Whoever runs Terraform may read and write the files too, so that
@@ -95,7 +106,7 @@ resource "azurerm_role_assignment" "deployer" {
 # --- SAS token for a site outside Azure --------------------------------------------
 
 # A new token is issued every 6 months (on the next deploy) and each is valid
-# for 18, so a site that is deployed at least once a year never sees one expire.
+# for 19, so a site that is deployed at least once a year never sees one expire.
 resource "time_rotating" "sas" {
   count           = var.media_access_key ? 1 : 0
   rotation_months = 6
@@ -107,7 +118,7 @@ data "azurerm_storage_account_blob_container_sas" "site" {
   container_name    = azurerm_storage_container.media.name
   https_only        = true
   start             = timeadd(time_rotating.sas[0].id, "-1h")    # allow for clock skew
-  expiry            = timeadd(time_rotating.sas[0].id, "13140h") # 18 months
+  expiry            = timeadd(time_rotating.sas[0].id, "13896h") # 19 months (579 days)
   permissions {
     read   = true
     add    = true

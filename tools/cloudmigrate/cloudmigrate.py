@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -31,6 +32,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
@@ -48,7 +50,10 @@ class Fail(Exception):
 
 
 def say(msg: str = "") -> None:
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except BrokenPipeError:  # output piped into head and the like: keep working, stop printing
+        sys.stdout = open(os.devnull, "w")
 
 
 # --- secret.tfvars ---------------------------------------------------------------
@@ -548,6 +553,13 @@ def copy(src: Endpoint, dst: Endpoint, *, replace: bool, do_freeze: bool, yes: b
 
 MEDIA_DIR = "/data/media"  # inside the api container
 Listing = dict  # key -> (size, base64 md5 or None)
+# Keys with a part starting with "." (.DS_Store, the app's half-written upload
+# temp files) are not media: every store leaves them out.
+_HIDDEN_RE = r"(^|.*/)\."
+
+
+def hidden(key: str) -> bool:
+    return any(part.startswith(".") for part in key.split("/"))
 
 
 def _cli(argv: list[str], what: str, *, ok_empty: str | None = None) -> str:
@@ -595,7 +607,7 @@ class DirStore(MediaStore):
         out = {}
         for f in sorted(self.path.rglob("*")):
             rel = f.relative_to(self.path)
-            if f.is_file() and not any(part.startswith(".") for part in rel.parts):
+            if f.is_file() and not hidden(rel.as_posix()):
                 out[rel.as_posix()] = (f.stat().st_size, _md5_b64(f))
         return out
 
@@ -618,13 +630,15 @@ class GcsStore(MediaStore):
         out = _cli(["gcloud", "storage", "objects", "list", f"gs://{self.bucket}/**", "--raw",
                     "--format=json(name,size,md5Hash)"], f"listing {self.label}", ok_empty="matched no objects")
         return {o["name"]: (int(o["size"]), o.get("md5Hash")) for o in json.loads(out or "[]")
-                if not o["name"].endswith("/")}
+                if not o["name"].endswith("/") and not hidden(o["name"])}
 
     def pull(self, dest: Path) -> None:
-        _cli(["gcloud", "storage", "rsync", f"gs://{self.bucket}", str(dest), "--recursive"], f"downloading {self.label}")
+        _cli(["gcloud", "storage", "rsync", f"gs://{self.bucket}", str(dest), "--recursive", f"--exclude={_HIDDEN_RE}"],
+             f"downloading {self.label}")
 
     def push(self, src: Path) -> None:
-        _cli(["gcloud", "storage", "rsync", str(src), f"gs://{self.bucket}", "--recursive"], f"uploading to {self.label}")
+        _cli(["gcloud", "storage", "rsync", str(src), f"gs://{self.bucket}", "--recursive", f"--exclude={_HIDDEN_RE}"],
+             f"uploading to {self.label}")
 
 
 class AzureStore(MediaStore):
@@ -639,7 +653,8 @@ class AzureStore(MediaStore):
         out = _cli(self._az("list", "--container-name", self.container, "--num-results", "*", "--query",
                             "[].{name:name,size:properties.contentLength,md5:properties.contentSettings.contentMd5}",
                             "-o", "json"), f"listing {self.label}")
-        return {o["name"]: (int(o["size"]), o.get("md5") or None) for o in json.loads(out or "[]")}
+        return {o["name"]: (int(o["size"]), o.get("md5") or None) for o in json.loads(out or "[]")
+                if not hidden(o["name"])}
 
     def pull(self, dest: Path) -> None:
         _cli(self._az("download-batch", "--source", self.container, "--destination", str(dest), "-o", "none"),
@@ -678,7 +693,7 @@ class ComposeStore(MediaStore):
         out = {}
         for line in self._run(_LIST_SH).splitlines():
             key, size, md5 = line.split("\t")
-            if not any(part.startswith(".") for part in key.split("/")):
+            if not hidden(key):
                 out[key] = (int(size), base64.b64encode(bytes.fromhex(md5)).decode())
         return out
 
@@ -689,10 +704,14 @@ class ComposeStore(MediaStore):
                                 stderr=subprocess.PIPE)
         try:
             with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
-                tar.extractall(dest, filter="data")
+                for member in tar:
+                    name = member.name.removeprefix("./")
+                    if name not in (".", "") and not hidden(name):
+                        tar.extract(member, dest, filter="data")
         finally:
             proc.stdout.close()
-            err = proc.stderr.read().decode(errors="replace").strip()
+            with proc.stderr:
+                err = proc.stderr.read().decode(errors="replace").strip()
             if proc.wait() != 0:
                 raise Fail(f"{self.label}: {err or 'tar failed'}")
 
@@ -710,10 +729,12 @@ class ComposeStore(MediaStore):
                     with open(src / key, "rb") as f:
                         tar.addfile(info, f)
         except BrokenPipeError:
-            pass
+            pass  # the remote side stopped reading; its exit status says why
         finally:
-            proc.stdin.close()
-            err = proc.stderr.read().decode(errors="replace").strip()
+            with contextlib.suppress(BrokenPipeError):
+                proc.stdin.close()
+            with proc.stderr:
+                err = proc.stderr.read().decode(errors="replace").strip()
             if proc.wait() != 0:
                 raise Fail(f"{self.label}: {err or 'tar failed'}")
 
@@ -790,6 +811,10 @@ def media_copy(src: MediaStore, dst: MediaStore) -> Path | None:
         say(f"  Downloading to {staging.relative_to(REPO) if staging.is_relative_to(REPO) else staging} "
             "(kept as a backup) ...")
         src.pull(staging)
+        # az download-batch cannot leave out hidden blobs, so drop them here (children first).
+        for f in sorted(staging.rglob("*"), reverse=True):
+            if hidden(f.relative_to(staging).as_posix()):
+                f.rmdir() if f.is_dir() and not f.is_symlink() else f.unlink()
         say(f"  Uploading to {dst.label} ...")
         dst.push(staging)
     if not media_verify(src, dst, before):
@@ -809,12 +834,123 @@ def dns_target() -> str | None:
     return out if p.returncode == 0 and out in TARGETS else None
 
 
+class SwitchedFail(Fail):
+    """A deploy failed after the domain was already pointed at the new host."""
+
+
 def deploy(target: str, *, switch_dns: bool, vps_up: str = "all", extra: list[str] | None = None) -> None:
     argv = ["ansible-playbook", "deploy.yml", "-e", f"target={target}",
             "-e", f"switch_dns={'true' if switch_dns else 'false'}", "-e", f"vps_up={vps_up}", *(extra or [])]
+    before = dns_target() if switch_dns else None
     say(f"  $ (cd infra/ansible && {' '.join(argv)})")
-    if subprocess.run(argv, cwd=REPO / "infra" / "ansible").returncode != 0:
-        raise Fail(f"the deploy to {target} failed; the domain still points where it did")
+    if subprocess.run(argv, cwd=REPO / "infra" / "ansible").returncode == 0:
+        return
+    now = dns_target() if switch_dns else None
+    if switch_dns and now == target and before != target:
+        raise SwitchedFail(f"the deploy to {target} failed after the domain was pointed at it, so {target} is now "
+                           "the live site. Fix the error above and finish with: "
+                           f"(cd infra/ansible && ansible-playbook deploy.yml -e target={target})")
+    raise Fail(f"the deploy to {target} failed; the domain points at {now or before or 'the same host as before'}")
+
+
+# --- dns adopt: records from an older gcp/ or azure/ state into dns/ ----------------------------
+
+def tf_root(name: str) -> Path:
+    return REPO / "infra" / "terraform" / name
+
+
+def _tf(root: Path, *args: str) -> str:
+    p = subprocess.run(["terraform", f"-chdir={root}", *args], capture_output=True, text=True)
+    if p.returncode != 0:
+        err = re.sub(r"\x1b\[[0-9;]*m", "", p.stderr).strip()
+        raise Fail(f"terraform {args[0]} in {root.relative_to(REPO)} failed:\n{err}")
+    return p.stdout
+
+
+def tf_state_pull(root: Path) -> dict | None:
+    try:
+        out = _tf(root, "state", "pull")
+    except Fail as e:
+        if "terraform init" not in str(e):
+            raise
+        _tf(root, "init", "-input=false")  # a backend block that this machine has not set up yet
+        out = _tf(root, "state", "pull")
+    return json.loads(out) if out.strip() else None
+
+
+def tf_state_push(root: Path, path: Path) -> None:
+    _tf(root, "state", "push", str(path.resolve()))
+
+
+def _in_dns_module(r: dict) -> bool:
+    return r.get("module", "") == "module.dns" or r.get("module", "").startswith(("module.dns.", "module.dns["))
+
+
+def adopt_dns_state(old: dict, dns: dict | None, target: str) -> tuple[dict, dict]:
+    """Move the module.dns resources of an old gcp/ or azure/ state into a dns/
+    state. Returns (the old state without them, the new dns state)."""
+    moved = [r for r in old.get("resources", []) if _in_dns_module(r)]
+    if not moved:
+        raise Fail("this state has no DNS records to move (module.dns); nothing to do")
+    if dns and any(_in_dns_module(r) for r in dns.get("resources", [])):
+        raise Fail("the dns/ state already holds the records. Check `terraform -chdir=infra/terraform/dns state list` "
+                   "and remove the duplicate from one of the two states by hand")
+    adopted = []
+    for r in moved:
+        r = json.loads(json.dumps(r))
+        if r.get("type") == "cloudflare_dns_record" and r.get("name") == "site":
+            # The old key's last part was the position in the whole list; dns/ counts within each type and name.
+            groups: dict[str, list[tuple[int, dict]]] = {}
+            for inst in r.get("instances", []):
+                group, _, i = str(inst["index_key"]).rpartition(":")
+                groups.setdefault(group, []).append((int(i), inst))
+            for group, items in groups.items():
+                for j, (_, inst) in enumerate(sorted(items, key=lambda x: x[0])):
+                    inst["index_key"] = f"{group}:{j}"
+        for inst in r.get("instances", []):
+            if "dependencies" in inst:
+                inst["dependencies"] = [d for d in inst["dependencies"] if d.startswith("module.dns.")]
+        adopted.append(r)
+    rest = dict(old, serial=old.get("serial", 0) + 1,
+                resources=[r for r in old.get("resources", []) if not _in_dns_module(r)])
+    new = dict(dns) if dns else {"version": 4, "terraform_version": old.get("terraform_version"), "serial": 0,
+                                 "lineage": str(uuid.uuid4()), "outputs": {}, "resources": [], "check_results": None}
+    new["serial"] = new.get("serial", 0) + 1
+    new["resources"] = list(new.get("resources", [])) + adopted
+    new["outputs"] = dict(new.get("outputs") or {}, site_target={"value": target, "type": "string"})
+    return rest, new
+
+
+def cmd_dns(args) -> int:
+    if not shutil.which("terraform"):
+        raise Fail("install Terraform first (see DEPLOY.md)")
+    old_root, dns_root = tf_root(args.frm), tf_root("dns")
+    old = tf_state_pull(old_root)
+    if not old:
+        raise Fail(f"infra/terraform/{args.frm} has no state on this machine or in its backend")
+    dns = tf_state_pull(dns_root)
+    rest, new = adopt_dns_state(old, dns, args.frm)
+    count = sum(len(r.get("instances", [])) for r in new["resources"] if _in_dns_module(r))
+    paths = {}
+    for label, state in [(f"{args.frm} state before dns adopt", old), ("dns state before dns adopt", dns),
+                         (f"{args.frm} state after dns adopt", rest), ("dns state after dns adopt", new)]:
+        if state is None:
+            continue
+        path = backup_path(label).with_suffix(".tfstate")
+        path.write_text(json.dumps(state, indent=2) + "\n")
+        path.chmod(0o600)  # state files hold secrets
+        paths[label] = path
+    say(f"Moving {count} Cloudflare records from infra/terraform/{args.frm} to infra/terraform/dns "
+        f"(backups in {BACKUPS.relative_to(REPO)}/).")
+    confirm("Records are not changed in Cloudflare, only which Terraform state owns them.", args.yes)
+    tf_state_push(old_root, paths[f"{args.frm} state after dns adopt"])
+    try:
+        tf_state_push(dns_root, paths["dns state after dns adopt"])
+    except Fail as e:
+        raise Fail(f"{e}\nThe records are now in no state. Retry with: terraform -chdir=infra/terraform/dns state push "
+                   f"{paths['dns state after dns adopt'].resolve()}") from None
+    say(f"Done. Deploy as usual: (cd infra/ansible && ansible-playbook deploy.yml -e target={args.frm})")
+    return 0
 
 
 # --- move plan ---------------------------------------------------------------------------
@@ -855,7 +991,7 @@ def plan_move(frm: str | None, to: str, db_from: str | None, db_to: str | None, 
     return steps
 
 
-def check_config(cfg: dict, to: str, db_to: str | None) -> None:
+def check_config(cfg: dict, to: str, db_to: str | None, frm: str | None = None) -> None:
     need = {"gcp": ["gcp_project_id"], "azure": ["azure_subscription_id", "acr_name"], "vps": ["vps_ipv4"]}[to]
     missing = [k for k in need if not cfg.get(k) or str(cfg[k]).startswith(("your-", "0000"))]
     if missing:
@@ -868,6 +1004,9 @@ def check_config(cfg: dict, to: str, db_to: str | None) -> None:
                    "Add --db-to vps to copy the data, or set vps_local_db = false to keep using Neon.")
     if db_to == "neon" and to == "vps" and local_db:
         raise Fail("set vps_local_db = false in secret.tfvars so the VPS uses database_url (Neon)")
+    if frm == "vps" and to != "vps" and local_db and db_to != "neon":
+        raise Fail(f"the live database is the VPS container (vps_local_db = true), and {to} uses database_url (Neon). "
+                   "Move the data too: --db-from vps --db-to neon.")
     media = cfg.get("media_storage") or "local"
     if media != "local" and (to, media) not in SAME_CLOUD and not cfg.get("media_access_key"):
         raise Fail(f"a site on {to} reaches the {media} media bucket with a key limited to it: "
@@ -878,15 +1017,22 @@ def check_config(cfg: dict, to: str, db_to: str | None) -> None:
 SAME_CLOUD = (("gcp", "gcs"), ("azure", "azure"))
 
 
+def neon_preflight(cfg: dict, client: str) -> None:
+    """The new host will use Neon as it is. A frozen Neon was left behind by an
+    earlier move, so the live data is somewhere else."""
+    if info(resolve("neon", cfg, client))["read_only"]:
+        raise Fail("Neon (database_url) is read-only: an earlier move left it behind, so the live data is elsewhere "
+                   "(probably the VPS container). Copy it back with --db-from vps --db-to neon, or, if Neon really is "
+                   "current, run `cloudmigrate.py db unfreeze neon` first.")
+
+
 def media_preflight(cfg: dict, frm: str | None, to: str) -> None:
     if (cfg.get("media_storage") or "local") != "local" or to == "vps":
         return
-    if frm == "vps":
-        raise Fail(f"media_storage = \"local\": uploads live in the VPS volume, and {to} cannot keep files. "
-                   "Create a bucket first: set media_storage = \"gcs\" or \"azure\" (see tools/cloudmigrate/README.md), "
-                   "deploy, then `cloudmigrate.py media copy vps gcs` (or azure).")
-    say(f"Warning: media_storage = \"local\": {to} discards uploaded files when it restarts a container. "
-        "Use a media bucket (tools/cloudmigrate/README.md).")
+    hint = (" Copy the files from the VPS volume first: `cloudmigrate.py media copy vps gcs` (or azure)."
+            if frm == "vps" else "")
+    raise Fail(f"media_storage = \"local\", but {to} discards files written to its containers. Set media_storage = "
+               "\"gcs\" or \"azure\" and the bucket in secret.tfvars (see docs/deploy.md#media)." + hint)
 
 
 def after_move_notes(frm: str | None, to: str, db_from: str | None, db_to: str | None, cfg: dict) -> list[str]:
@@ -1010,8 +1156,10 @@ def cmd_move(args) -> int:
     db_from = args.db_from or ({"vps": "neon", "neon": "vps"}.get(args.db_to) if args.db_to else None)
     steps = plan_move(frm, args.to, db_from, args.db_to, freeze_source=not args.no_freeze,
                       stop_before_dns=args.stop_before_dns)
-    check_config(cfg, args.to, args.db_to)
+    check_config(cfg, args.to, args.db_to, frm)
     media_preflight(cfg, frm, args.to)
+    if not args.db_to and (args.to != "vps" or not cfg.get("vps_local_db")):
+        neon_preflight(cfg, args.client)
     tools = ["terraform", "ansible-playbook", "docker"] + (["ssh"] if "vps" in (args.to, frm, db_from, args.db_to) else [])
     if missing := [t for t in tools if not shutil.which(t)]:
         raise Fail(f"install {', '.join(missing)} first (see DEPLOY.md)")
@@ -1039,6 +1187,11 @@ def cmd_move(args) -> int:
                 # The target is replaced (after a backup); an old frozen copy is reopened first.
                 copy(resolve(s.args["src"], cfg, args.client), resolve(s.args["dst"], cfg, args.client),
                      replace=True, do_freeze=False, yes=True, unfreeze_target=True)
+        except SwitchedFail as e:
+            if frozen:
+                raise Fail(f"{e}\nThe new site runs on the {args.db_to} database. Leave {db_from} read-only, "
+                           "and do not run the move again: that would copy the old data over the new.") from None
+            raise
         except Fail as e:
             if frozen:
                 raise Fail(f"{e}\nThe {db_from} database is still read-only. To reopen the old site for writes: "
@@ -1107,17 +1260,24 @@ def main(argv: list[str] | None = None) -> int:
     mv.add_argument("--dry-run", action="store_true", help="only print the steps")
     mv.add_argument("--yes", action="store_true", help="do not ask for confirmation")
 
+    dn = sub.add_parser("dns", help="Cloudflare records in Terraform")
+    dns = dn.add_subparsers(dest="action", required=True)
+    p = dns.add_parser("adopt", help="move the records of a deployment made before the dns/ root into it",
+                       description="Deployments made before infra/terraform/dns kept the Cloudflare records in the "
+                                   "gcp/ or azure/ state. This moves them into the dns/ state without touching "
+                                   "Cloudflare; the deploy playbook stops until it has run.")
+    p.add_argument("frm", choices=["gcp", "azure"], metavar="FROM", help="gcp or azure")
+    p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
     args = ap.parse_args(argv)
     try:
-        return {"check": cmd_check, "db": cmd_db, "media": cmd_media, "move": cmd_move}[args.cmd](args)
+        return {"check": cmd_check, "db": cmd_db, "media": cmd_media, "move": cmd_move, "dns": cmd_dns}[args.cmd](args)
     except Fail as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
         return 130
-    except BrokenPipeError:  # output piped into head and the like
-        return 0
 
 
 if __name__ == "__main__":

@@ -42,15 +42,15 @@ records (SPF, DKIM, DMARC) never change.
      Search Console with the same account (domain mappings require it).
    - Azure: `az login`, and `az extension add --name containerapp`.
    - VPS: a server with a public IPv4 address and root SSH (or a user with
-     passwordless sudo), running Ubuntu/Debian or AlmaLinux/Rocky without a
-     control panel; cPanel's web server would hold ports 80 and 443. A Bluehost
+     passwordless sudo), running Ubuntu 22.04+, Debian 12+ or AlmaLinux/Rocky 9+
+     without a control panel; cPanel's web server would hold ports 80 and 443. A Bluehost
      **VPS or dedicated** plan works; Bluehost shared hosting cannot run Docker.
      Set up key login (`ssh-copy-id root@<ip>`). The playbook installs Docker.
 6. **Media bucket** (optional on a VPS, needed on Cloud Run and Azure): see
    [Media](#media) below. The bucket may sit in another Google Cloud project or
    Azure subscription than the site.
-7. Install Docker (with buildx), Terraform 1.9+ and `ansible-core` on the
-   machine you deploy from. On Windows, use WSL and keep the clone inside the
+7. Install Docker (with buildx), Terraform 1.9+ and `ansible-core` 2.15 or
+   newer (`pipx install 'ansible-core>=2.15'`) on the machine you deploy from. On Windows, use WSL and keep the clone inside the
    WSL home directory (not under `/mnt/c`), where file permissions and line
    endings behave.
 
@@ -92,7 +92,8 @@ The playbook:
    `Caddyfile` and `.env` to `vps_dir` (default `/opt/portfolio`) and starts the stack,
 4. smoke-tests the service,
 5. points the domain at it (`dns/` root) and, on Azure, issues the managed
-   certificates. `-e switch_dns=false` skips this step.
+   certificates; on a VPS it restarts Caddy so the certificate is requested
+   straight away. `-e switch_dns=false` skips this step.
 
 Run it again for every release; unchanged infrastructure is left alone.
 The first certificate can take 15–60 minutes after DNS is in place. Until then
@@ -100,6 +101,20 @@ the summary says the domain is "not reachable yet".
 
 On a VPS: `ssh root@<ip> 'cd /opt/portfolio && docker compose ps'` shows the
 stack, and `docker compose logs -f api` its logs.
+
+Cloud Run and Container Apps refuse `media_storage = "local"` (the playbook and
+Terraform both stop), because their containers lose written files.
+
+### Deployments made before the `dns/` root
+
+Earlier versions kept the Cloudflare records in the `gcp/` or `azure/` state.
+The playbook now stops when it finds them there, because applying that state
+would delete the records. Move them into `dns/` once; Cloudflare is not
+touched, and both states are backed up to `backups/` first:
+
+```sh
+python3 tools/cloudmigrate/cloudmigrate.py dns adopt gcp   # or azure
+```
 
 ## 4. After the first deploy
 
@@ -146,7 +161,7 @@ through the API, so the bucket stays private:
   and the other way round) needs `media_access_key = true`. Google: a
   dedicated service account whose only permission is object access on this
   bucket, and a key for it. Azure: a SAS token limited to this container (no
-  account-wide SAS), renewed every 6 months on deploy and valid for 18. Without
+  account-wide SAS), renewed every 6 months on deploy and valid for 19. Without
   `media_access_key`, the Azure account keys are switched off entirely. The key
   goes into the site's secrets, never into git. Organisations that block
   service-account keys (`iam.disableServiceAccountKeyCreation`) need an

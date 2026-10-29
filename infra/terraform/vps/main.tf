@@ -24,6 +24,10 @@ variable "vps_ipv6" {
   type        = string
   default     = ""
   description = "Public IPv6 address, if the server has one (adds an AAAA record)."
+  validation {
+    condition     = var.vps_ipv6 == "" || (strcontains(var.vps_ipv6, ":") && can(cidrhost("${var.vps_ipv6}/128", 0)))
+    error_message = "vps_ipv6 must be the server's IPv6 address, such as 2001:db8::10, or empty."
+  }
 }
 variable "vps_ssh_host" {
   type        = string
@@ -116,7 +120,7 @@ output "env_file" {
     error_message = "A media bucket on a VPS needs a key for it: set media_access_key = true in secret.tfvars and deploy with the playbook, which passes the key in."
   }
   precondition {
-    condition     = can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.vps_ipv4))
+    condition     = can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.vps_ipv4)) && can(cidrnetmask("${var.vps_ipv4}/32"))
     error_message = "Set vps_ipv4 in secret.tfvars to the server's public IPv4 address."
   }
   precondition {

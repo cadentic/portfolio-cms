@@ -233,6 +233,10 @@ variable "media_azure_account" {
 variable "media_azure_container" {
   type    = string
   default = "media"
+  validation {
+    condition     = can(regex("^[a-z0-9](-?[a-z0-9])+$", var.media_azure_container)) && length(var.media_azure_container) >= 3 && length(var.media_azure_container) <= 63
+    error_message = "media_azure_container: 3-63 lowercase letters, digits and single hyphens, starting and ending with a letter or digit."
+  }
 }
 
 # Set by the deploy playbook from the media root's outputs (media.auto.tfvars.json).

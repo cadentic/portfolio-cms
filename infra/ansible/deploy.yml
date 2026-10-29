@@ -37,9 +37,11 @@
           - lookup('ansible.builtin.fileglob', tfvars) | length > 0
           - vps_up in ['all', 'db']
           - vps_up == 'all' or (target == 'vps' and not (switch_dns | bool))
+          - ansible_version.full is version('2.15', '>=')
         fail_msg: >-
           Use -e target=gcp|azure|vps and create {{ tfvars }} from secret.tfvars.example.
           -e vps_up=db is only for target=vps together with -e switch_dns=false.
+          This playbook needs ansible-core 2.15 or newer (pipx install 'ansible-core>=2.15').
 
     - name: Refuse to deploy uncommitted changes
       ansible.builtin.command: git -C {{ repo_root }} status --porcelain
@@ -60,10 +62,35 @@
         argv: "{{ tf_base + ['init', '-input=false'] }}"
       changed_when: false
 
+    # Deployments made before the dns/ root kept the Cloudflare records in the
+    # gcp/ or azure/ state. Applying that state now would delete them.
+    - name: Check for DNS records in this root's state
+      when: target != 'vps'
+      ansible.builtin.command:
+        argv: "{{ tf_base + ['state', 'list'] }}"
+      register: tf_state_list
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if the DNS records still live in the {{ target }} state
+      when: target != 'vps' and (tf_state_list.stdout_lines | select('match', 'module\\.dns\\.') | list | length > 0)
+      ansible.builtin.fail:
+        msg: >-
+          The {{ target }} Terraform state still holds the Cloudflare records, which now belong to
+          infra/terraform/dns. Move them once, from the repository root, with
+          `python3 tools/cloudmigrate/cloudmigrate.py dns adopt {{ target }}`, then run this again.
+
     # The media bucket comes first: the site's settings include its key, if any.
     - name: Read media_storage from secret.tfvars
       ansible.builtin.set_fact:
         media_storage: "{{ (lookup('ansible.builtin.file', tfvars) | regex_findall('(?m)^\\s*media_storage\\s*=\\s*\"(\\w+)\"')) | first | default('local') }}"
+
+    - name: Check that Cloud Run and Container Apps have a media bucket
+      ansible.builtin.assert:
+        that: target == 'vps' or media_storage != 'local'
+        fail_msg: >-
+          Cloud Run and Container Apps discard files written to the container, so uploads would be lost.
+          Set media_storage = "gcs" or "azure" (and the bucket name) in secret.tfvars.
 
     - name: Media bucket
       when: media_storage != 'local'
@@ -263,6 +290,13 @@
       ansible.builtin.command: docker load -i {{ vps_dir }}/images-{{ image_tag }}.tar.gz
       changed_when: true
 
+    - name: Remove the image file on this machine
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vps_images }}"
+        state: absent
+
     - name: Remove the uploaded image file
       ansible.builtin.file:
         path: "{{ vps_dir }}/images-{{ image_tag }}.tar.gz"
@@ -294,9 +328,20 @@
       until: smoke.rc == 0
       changed_when: false
 
-    - name: Remove unused images
-      ansible.builtin.command: docker image prune -f
-      changed_when: false
+    # Each release has its own tag, so old images are never "dangling" and
+    # prune alone would keep them all.
+    - name: Remove the images of earlier releases
+      when: vps_up == 'all'
+      vars:
+        image_format: !unsafe '{{.Repository}}:{{.Tag}}'
+      ansible.builtin.shell:
+        cmd: >-
+          docker image ls --format '{{ image_format }}' | grep -E '^portfolio-(api|web):'
+          | grep -vxF -e 'portfolio-api:{{ image_tag }}' -e 'portfolio-web:{{ image_tag }}'
+          | xargs -r docker image rm; docker image prune -f
+      register: image_cleanup
+      changed_when: "'Untagged' in image_cleanup.stdout or 'Deleted' in image_cleanup.stdout"
+      failed_when: false
 
 - name: Point the domain at the target and check it
   hosts: localhost
@@ -334,6 +379,17 @@
                    '-var=site_target=' ~ target, '-var=site_records=' ~ (tf_out.site_records.value | to_json)] }}"
           register: tf_dns
           changed_when: "'No changes.' not in tf_dns.stdout"
+
+        # Caddy started before the domain pointed here, so its first certificate
+        # request failed and it backs off for up to hours. A restart retries now.
+        - name: Restart Caddy so it requests the certificates now (VPS)
+          when: target == 'vps' and tf_dns is changed
+          delegate_to: vps
+          become: "{{ hostvars['vps'].ansible_user != 'root' }}"
+          ansible.builtin.command:
+            cmd: docker compose restart caddy
+            chdir: "{{ hostvars['vps'].vps_dir }}"
+          changed_when: true
 
         - name: Add the hostnames now that DNS points here (Azure, first deploy)
           when: target == 'azure' and tf_out.pending_hostnames.value | length > 0

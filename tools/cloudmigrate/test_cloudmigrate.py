@@ -121,6 +121,12 @@ class PlanTest(unittest.TestCase):
             cm.check_config({**base, "vps_local_db": True}, "vps", "neon")
         with self.assertRaises(cm.Fail):
             cm.check_config({"gcp_project_id": "your-gcp-project"}, "gcp", None)
+        # Leaving a VPS whose container holds the live data needs the data moved too.
+        local = {**base, "vps_local_db": True, "media_storage": "gcs", "media_gcs_bucket": "b"}
+        with self.assertRaisesRegex(cm.Fail, "--db-from vps --db-to neon"):
+            cm.check_config(local, "gcp", None, "vps")
+        cm.check_config(local, "gcp", "neon", "vps")
+        cm.check_config(local, "gcp", None, "azure")
 
     def test_media_config_checks(self):
         base = {"vps_ipv4": "203.0.113.10", "gcp_project_id": "p", "azure_subscription_id": "s", "acr_name": "a"}
@@ -135,16 +141,43 @@ class PlanTest(unittest.TestCase):
         # Local media cannot follow the site off the VPS.
         with self.assertRaisesRegex(cm.Fail, "media copy vps"):
             cm.media_preflight(base, "vps", "gcp")
+        with self.assertRaisesRegex(cm.Fail, "discards files"):
+            cm.media_preflight(base, None, "azure")
         cm.media_preflight(base, "gcp", "vps")
         cm.media_preflight(gcs, "vps", "gcp")
         notes = cm.after_move_notes("azure", "gcp", None, None, {**gcs, "media_access_key": True})
         self.assertTrue(any("media_access_key = false" in n for n in notes))
+
+    def test_frozen_neon_is_not_deployed_against(self):
+        cfg = {"database_url": "postgres://u:pw@neon.example/portfolio"}
+        with mock.patch.object(cm, "info", return_value={"read_only": True}):
+            with self.assertRaisesRegex(cm.Fail, "read-only"):
+                cm.neon_preflight(cfg, "local")
+        with mock.patch.object(cm, "info", return_value={"read_only": False}):
+            cm.neon_preflight(cfg, "local")
 
     def test_compare(self):
         a = {"tables": {"t": {"rows": 1, "md5": "x"}, "u": {"rows": 0, "md5": "y"}}, "sequences": {"s": 5}}
         b = {"tables": {"t": {"rows": 1, "md5": "z"}}, "sequences": {"s": 5}}
         self.assertEqual(cm.compare(a, b), [("t", "1", "1", False), ("u", "0", "-", False),
                                             ("(sequence) s", "5", "5", True)])
+
+
+class DeployTest(unittest.TestCase):
+    def deploy(self, before, after):
+        failed = subprocess.CompletedProcess([], 2)
+        with mock.patch.object(cm.subprocess, "run", return_value=failed), \
+                mock.patch.object(cm, "dns_target", side_effect=[before, after]), mock.patch.object(cm, "say"):
+            cm.deploy("azure", switch_dns=True)
+
+    def test_failure_after_the_switch(self):
+        with self.assertRaisesRegex(cm.SwitchedFail, "azure is now the live site"):
+            self.deploy("gcp", "azure")
+
+    def test_failure_before_the_switch(self):
+        with self.assertRaisesRegex(cm.Fail, "points at gcp") as e:
+            self.deploy("gcp", "gcp")
+        self.assertNotIsInstance(e.exception, cm.SwitchedFail)
 
 
 class CommandTest(unittest.TestCase):
@@ -166,7 +199,7 @@ class CommandTest(unittest.TestCase):
 
 # Stand-ins for gcloud and az that keep "buckets" in folders under $FAKE_CLOUD.
 FAKE_GCLOUD = r"""
-import base64, hashlib, json, os, shutil, sys
+import base64, hashlib, json, os, re, shutil, sys
 root = os.environ["FAKE_CLOUD"]
 def path(u):
     return os.path.join(root, "gcs", u[5:].split("/")[0]) if u.startswith("gs://") else u
@@ -187,7 +220,10 @@ if a[:3] == ["storage", "objects", "list"]:
     print(json.dumps(out))
 elif a[:2] == ["storage", "rsync"] and a[4] == "--recursive":
     src, dst = path(a[2]), path(a[3])
+    exclude = [x.partition("=")[2] for x in a[5:] if x.startswith("--exclude=")]
     for k in files(src):
+        if any(re.match(x, k) for x in exclude):
+            continue
         os.makedirs(os.path.dirname(os.path.join(dst, k)), exist_ok=True)
         shutil.copyfile(os.path.join(src, k), os.path.join(dst, k))
 else:
@@ -276,17 +312,32 @@ class MediaTest(unittest.TestCase):
         self.assertEqual(gcs.list(), {})  # an empty bucket is not an error
         self.assertIsNone(cm.media_copy(cm.DirStore(self.src), gcs))
         self.assertEqual(len(gcs.list()), 2)
+        # Hidden objects (an interrupted upload's temp file) are neither listed nor copied.
+        for where in ("gcs/bucket-1/uploads/.tmp-1", "az/acct/media/.tmp-2"):
+            (self.tmp / "cloud" / where).parent.mkdir(parents=True, exist_ok=True)
+            (self.tmp / "cloud" / where).write_bytes(b"partial")
+        self.assertEqual(len(gcs.list()), 2)
         staging = cm.media_copy(gcs, azure)
         self.assertTrue((staging / "wordpress/2012/03/a.jpg").is_file())  # kept under backups/
+        self.assertFalse((staging / "uploads/.tmp-1").exists())
+        self.assertEqual(len(azure.list()), 2)
         self.assertTrue(cm.media_verify(gcs, azure))
         out = self.tmp / "restored"
         cm.media_copy(azure, cm.DirStore(out))
         self.assertEqual((out / "uploads/2026/10/1-b c.png").read_bytes(), b"png" * 100)
+        self.assertFalse((out / ".tmp-2").exists())
         # A changed file is reported.
         (self.tmp / "cloud/az/acct/media/wordpress/2012/03/a.jpg").write_bytes(b"jpeg, but longer")
         self.assertFalse(cm.media_verify(gcs, azure))
         with self.assertRaisesRegex(cm.Fail, "no files"):
             cm.media_copy(cm.GcsStore("empty"), azure)
+
+    def test_volume_upload_failure_is_reported(self):
+        # The remote tar reads a little, then fails (a full disk, say): no BrokenPipeError escapes.
+        (self.src / "big.bin").write_bytes(os.urandom(4 << 20))
+        stop = [sys.executable, "-c", "import sys; sys.stdin.buffer.read(1000); sys.exit('tar: write error')"]
+        with self.assertRaisesRegex(cm.Fail, "write error"):
+            cm.ComposeStore("volume", stop, "/srv").push(self.src)
 
     def test_cli(self):
         def run(*args):
@@ -300,6 +351,92 @@ class MediaTest(unittest.TestCase):
         self.assertEqual(run("media", "verify", str(self.src), "gs://other").returncode, 1)
         p = run("media", "copy", "gs://cli-bucket", "gs://cli-bucket")
         self.assertIn("the same", p.stderr)
+
+
+CF = 'provider["registry.terraform.io/cloudflare/cloudflare"]'
+
+
+def tf_resource(module, rtype, name, keys, deps=()):
+    provider = CF if rtype.startswith("cloudflare") else 'provider["registry.terraform.io/hashicorp/google"]'
+    r = {"mode": "managed", "type": rtype, "name": name, "provider": provider,
+         "instances": [{"schema_version": 0, "attributes": {"id": f"{name}-{k}"}, "sensitive_attributes": [],
+                        "dependencies": list(deps), **({"index_key": k} if k is not None else {})} for k in keys]}
+    return {"module": module, **r} if module else r
+
+
+def old_gcp_state():
+    """A gcp/ state from before the dns/ root: the records sit in module.dns, keyed by their place in the list."""
+    site = [f"A:cadentic.dev:{i}" for i in range(4)] + [f"AAAA:cadentic.dev:{i}" for i in range(4, 8)] \
+        + ["CNAME:www.cadentic.dev:8"]
+    return {"version": 4, "terraform_version": "1.9.8", "serial": 7, "lineage": "old-lineage", "outputs": {},
+            "check_results": None, "resources": [
+                tf_resource(None, "google_cloud_run_v2_service", "web", [None]),
+                tf_resource("module.dns", "cloudflare_dns_record", "site", site,
+                            ["google_cloud_run_v2_service.web", "module.dns.cloudflare_dns_record.spf"]),
+                tf_resource("module.dns", "cloudflare_dns_record", "spf", [None]),
+                tf_resource("module.dns", "cloudflare_dns_record", "email", ["CNAME:brevo1._domainkey.cadentic.dev:0"]),
+            ]}
+
+
+class DnsAdoptTest(unittest.TestCase):
+    def test_gcp_records_are_rekeyed_within_each_name(self):
+        rest, new = cm.adopt_dns_state(old_gcp_state(), None, "gcp")
+        self.assertEqual([r["type"] for r in rest["resources"]], ["google_cloud_run_v2_service"])
+        self.assertEqual((rest["serial"], rest["lineage"]), (8, "old-lineage"))
+        site = next(r for r in new["resources"] if r["name"] == "site")
+        self.assertEqual([i["index_key"] for i in site["instances"]],
+                         [f"A:cadentic.dev:{i}" for i in range(4)] + [f"AAAA:cadentic.dev:{i}" for i in range(4)]
+                         + ["CNAME:www.cadentic.dev:0"])
+        self.assertEqual([i["attributes"]["id"] for i in site["instances"]][4:], [f"site-AAAA:cadentic.dev:{i}" for i in range(4, 8)]
+                         + ["site-CNAME:www.cadentic.dev:8"])  # the same Cloudflare records, new keys
+        self.assertEqual(site["instances"][0]["dependencies"], ["module.dns.cloudflare_dns_record.spf"])
+        email = next(r for r in new["resources"] if r["name"] == "email")
+        self.assertEqual(email["instances"][0]["index_key"], "CNAME:brevo1._domainkey.cadentic.dev:0")
+        self.assertEqual((new["version"], new["serial"], new["terraform_version"]), (4, 1, "1.9.8"))
+        self.assertNotEqual(new["lineage"], "old-lineage")
+        self.assertEqual(new["outputs"]["site_target"], {"value": "gcp", "type": "string"})
+
+    def test_azure_records(self):
+        keys = ["A:cadentic.dev:0", "TXT:asuid.cadentic.dev:1", "CNAME:www.cadentic.dev:2", "TXT:asuid.www.cadentic.dev:3"]
+        old = {"version": 4, "serial": 1, "lineage": "l", "resources": [
+            tf_resource("module.dns", "cloudflare_dns_record", "site", keys)]}
+        dns = {"version": 4, "serial": 3, "lineage": "dns-lineage", "outputs": {}, "resources": []}
+        _, new = cm.adopt_dns_state(old, dns, "azure")
+        self.assertEqual([i["index_key"] for i in new["resources"][0]["instances"]],
+                         ["A:cadentic.dev:0", "TXT:asuid.cadentic.dev:0", "CNAME:www.cadentic.dev:0",
+                          "TXT:asuid.www.cadentic.dev:0"])
+        self.assertEqual((new["serial"], new["lineage"]), (4, "dns-lineage"))
+
+    def test_refusals(self):
+        with self.assertRaisesRegex(cm.Fail, "nothing to do"):
+            cm.adopt_dns_state({"resources": [tf_resource(None, "x", "y", [None])]}, None, "gcp")
+        taken = {"resources": [tf_resource("module.dns", "cloudflare_dns_record", "spf", [None])]}
+        with self.assertRaisesRegex(cm.Fail, "already holds"):
+            cm.adopt_dns_state(old_gcp_state(), taken, "gcp")
+
+    @unittest.skipUnless(shutil.which("terraform"), "needs terraform")
+    def test_with_terraform(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        for root in ("gcp", "dns"):
+            (tmp / "infra/terraform" / root).mkdir(parents=True)
+            (tmp / "infra/terraform" / root / "main.tf").write_text("terraform {}\n")
+        (tmp / "infra/terraform/gcp/terraform.tfstate").write_text(cm.json.dumps(old_gcp_state()))
+        with mock.patch.object(cm, "REPO", tmp), mock.patch.object(cm, "BACKUPS", tmp / "backups"), \
+                mock.patch.object(cm, "say"):
+            self.assertEqual(cm.main(["dns", "adopt", "gcp", "--yes"]), 0)
+            self.assertEqual(cm.main(["dns", "adopt", "gcp", "--yes"]), 1)  # nothing left to move
+
+        def state_list(root):
+            p = subprocess.run(["terraform", f"-chdir={tmp / 'infra/terraform' / root}", "state", "list"],
+                               capture_output=True, text=True, check=True)
+            return p.stdout.split()
+        self.assertEqual(state_list("gcp"), ["google_cloud_run_v2_service.web"])
+        dns = state_list("dns")
+        self.assertIn('module.dns.cloudflare_dns_record.site["CNAME:www.cadentic.dev:0"]', dns)
+        self.assertIn("module.dns.cloudflare_dns_record.spf", dns)
+        self.assertEqual(len(dns), 11)
+        self.assertEqual(len(list((tmp / "backups").glob("*.tfstate"))), 3)  # gcp before/after, dns after
 
 
 @unittest.skipUnless(os.environ.get("CLOUDMIGRATE_IT") == "1", "set CLOUDMIGRATE_IT=1 (see integration_test.sh)")

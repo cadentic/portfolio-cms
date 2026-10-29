@@ -71,6 +71,12 @@ jobs:
             terraform -chdir=infra/terraform/$root init -backend=false -input=false >/dev/null
             terraform -chdir=infra/terraform/$root validate
           done
+      - name: terraform test (mock providers, no cloud access)
+        run: |
+          for root in gcp azure vps media-gcs media-azure; do
+            echo "== $root"
+            terraform -chdir=infra/terraform/$root test
+          done
       - name: ansible syntax check
         run: |
           pipx install ansible-core
@@ -86,6 +92,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      # For the dns adopt test, which reads Terraform's own output.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
       - run: python -m unittest discover -s tools/cloudmigrate -v
       - run: tools/cloudmigrate/integration_test.sh
 

@@ -26,7 +26,9 @@ func TestReadOnlyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	// A cleanup, not a defer: the DROP DATABASE cleanups below run after the
+	// test returns and need this connection, and cleanups run last-in first-out.
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
 
 	open := func(name string) string {
 		b := make([]byte, 6)

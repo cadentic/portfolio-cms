@@ -66,13 +66,6 @@ locals {
   })
 }
 
-check "media_storage" {
-  assert {
-    condition     = var.media_storage != "local"
-    error_message = "media_storage = \"local\" keeps uploads on the container's disk, which Cloud Run discards. Use a bucket (media_storage = \"gcs\" or \"azure\")."
-  }
-}
-
 resource "google_project_service" "apis" {
   for_each           = toset(["run.googleapis.com", "artifactregistry.googleapis.com", "secretmanager.googleapis.com", "iam.googleapis.com", "storage.googleapis.com"])
   service            = each.value
@@ -203,6 +196,12 @@ resource "google_cloud_run_v2_service" "api" {
         http_get { path = "/healthz" }
         period_seconds = 30
       }
+    }
+  }
+  lifecycle {
+    precondition {
+      condition     = var.media_storage != "local"
+      error_message = "media_storage = \"local\" would keep uploads on the container's disk, which Cloud Run discards. Use a bucket: media_storage = \"gcs\" or \"azure\"."
     }
   }
   depends_on = [google_secret_manager_secret_version.s, google_secret_manager_secret_iam_member.api]

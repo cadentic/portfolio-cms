@@ -34,7 +34,10 @@ python3 tools/cloudmigrate/cloudmigrate.py move --to azure
 ```
 
 1. Change `secret.tfvars` for the new host first (for example fill in
-   `azure_subscription_id`, or `vps_ipv4`).
+   `azure_subscription_id`, or `vps_ipv4`). Cloud Run and Container Apps need
+   a media bucket: a site whose media is still on the VPS volume
+   (`media_storage = "local"`) is refused until the files are in a bucket
+   (`media copy vps gcs`, see below).
 2. `move` deploys the new host, smoke-tests it, then points the domain at it.
    The old host keeps running untouched, so going back is one deploy.
 3. When the site works on the new host, remove the old one (the tool prints
@@ -65,9 +68,22 @@ The steps, all printed before anything happens:
    row count and checksum, and every sequence. Any difference stops the move.
 4. Deploy the new host against the copy and switch DNS.
 
-If a step fails, the domain still points at the old host. The old database
-stays frozen until you run `db unfreeze` (the error says so), so nothing is
-written to a database you are leaving.
+If a step fails, the error says where the domain points now:
+
+- Usually that is still the old host. The old database stays frozen until you
+  run `db unfreeze` (the error says so), so nothing is written to a database
+  you are leaving.
+- If the deploy failed after the domain was already switched (the Azure
+  certificate step, say), the new host is live on the copied data. Leave the
+  old database frozen, fix the error, and finish with the `ansible-playbook`
+  command the error prints. Do not run `move` again: it would copy the old
+  data over the new.
+
+Two checks run before anything starts. Leaving a VPS whose database runs in
+its container (`vps_local_db = true`) needs `--db-from vps --db-to neon`, so
+the live data comes along. And a move that keeps using Neon stops if Neon is
+read-only, which means an earlier move left it behind and the live data is
+elsewhere.
 
 Neon's pooled host (`-pooler` in the name) is swapped for the direct host
 automatically, because `pg_dump` and the API's migrations need session
@@ -126,10 +142,23 @@ one bucket. `move` stops early with a message if the key is missing. Keep
 it on while both hosts run; after moving back into the bucket's cloud, set it
 to `false` and deploy to delete the key.
 
+## Deployments made before the `dns/` root
+
+Earlier versions kept the Cloudflare records in the `gcp/` or `azure/`
+Terraform state; the deploy playbook now stops when it finds them there.
+
+```sh
+python3 tools/cloudmigrate/cloudmigrate.py dns adopt gcp   # or azure
+```
+
+moves them into the `dns/` state without changing anything in Cloudflare. It
+saves both states to `backups/` first, re-keys the site records the way
+`dns/` expects them, and refuses if `dns/` already holds records.
+
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tools/cloudmigrate     # unit tests, no Docker needed
+python3 -m unittest discover -s tools/cloudmigrate     # unit tests, no Docker needed (Terraform optional)
 tools/cloudmigrate/integration_test.sh                 # real PostgreSQL 18 servers and a media volume
 ```
 

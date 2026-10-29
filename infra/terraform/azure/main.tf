@@ -148,13 +148,6 @@ resource "azurerm_role_assignment" "media" {
   principal_type       = "ServicePrincipal"
 }
 
-check "media_storage" {
-  assert {
-    condition     = var.media_storage != "local"
-    error_message = "media_storage = \"local\" keeps uploads on the container's disk, which Container Apps discards. Use a bucket (media_storage = \"gcs\" or \"azure\")."
-  }
-}
-
 # --- API and worker share an image and configuration -----------------------------
 
 resource "azurerm_container_app" "api" {
@@ -195,6 +188,10 @@ resource "azurerm_container_app" "api" {
   }
 
   lifecycle {
+    precondition {
+      condition     = var.media_storage != "local"
+      error_message = "media_storage = \"local\" would keep uploads on the container's disk, which Container Apps discards. Use a bucket: media_storage = \"azure\" or \"gcs\"."
+    }
     precondition {
       condition     = var.media_storage != "gcs" || nonsensitive(var.media_gcs_credentials != "")
       error_message = "media_storage = \"gcs\" on Azure needs a key for the bucket: set media_access_key = true in secret.tfvars and deploy with the playbook, which passes the key in."
@@ -303,13 +300,16 @@ resource "azurerm_container_app" "web" {
   depends_on = [azurerm_role_assignment.pull]
 }
 
-# The dns/ root creates these records; this root only describes them.
+# The dns/ root creates these records; this root only describes them. The
+# verification id is published in DNS, so it need not stay sensitive (a root
+# output may not hold sensitive values).
 locals {
+  domain_verification_id = nonsensitive(azurerm_container_app.web.custom_domain_verification_id)
   site_records = var.bind_domain ? [
     { name = var.domain, type = "A", content = azurerm_container_app_environment.env.static_ip_address },
-    { name = "asuid.${var.domain}", type = "TXT", content = azurerm_container_app.web.custom_domain_verification_id },
+    { name = "asuid.${var.domain}", type = "TXT", content = local.domain_verification_id },
     { name = "www.${var.domain}", type = "CNAME", content = azurerm_container_app.web.ingress[0].fqdn },
-    { name = "asuid.www.${var.domain}", type = "TXT", content = azurerm_container_app.web.custom_domain_verification_id },
+    { name = "asuid.www.${var.domain}", type = "TXT", content = local.domain_verification_id },
   ] : []
 }
 

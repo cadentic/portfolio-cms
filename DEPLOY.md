@@ -23,11 +23,11 @@ If a port is already taken, copy `.env.example` to `.env` and change `AUTH_PORT`
 | **Firebase** | A project with Authentication → Google sign-in enabled, `cadentic.dev` added to Authorized domains, and a Web app (gives the API key and auth domain). |
 | **Brevo** and **Mailjet** | An API key from each, and `cadentic.dev` added as a sending domain in both (they show the DKIM records to copy). |
 | **Cloudflare** | The `cadentic.dev` zone id and an API token with Zone → DNS → Edit. |
-| **Where it runs** | One of: Google Cloud (project with billing; `gcloud auth login` and `gcloud auth application-default login`; verify `cadentic.dev` in Search Console), Azure (`az login`; `az extension add --name containerapp`), or a VPS with root SSH key login (a Bluehost VPS or dedicated server with plain Ubuntu or AlmaLinux, no cPanel; Bluehost shared hosting cannot run Docker). |
+| **Where it runs** | One of: Google Cloud (project with billing; `gcloud auth login` and `gcloud auth application-default login`; verify `cadentic.dev` in Search Console), Azure (`az login`; `az extension add --name containerapp`), or a VPS with root SSH key login (a Bluehost VPS or dedicated server with plain Ubuntu 22.04+, Debian 12+ or AlmaLinux/Rocky 9+, no cPanel; Bluehost shared hosting cannot run Docker). |
 | **Media bucket** | Needed on Google Cloud and Azure, optional on a VPS: a private Google Cloud Storage bucket or Azure Blob container, which may sit in another project or subscription. Terraform creates it; you only choose the names. |
 
-Tools on the machine you deploy from: Docker with buildx, Terraform 1.9+, `ansible-core`, git, and
-`gcloud` or `az`. **On Windows, run the deploy from WSL (Ubuntu)**, because Ansible does not run
+Tools on the machine you deploy from: Docker with buildx, Terraform 1.9+, `ansible-core` 2.15 or
+newer (`pipx install 'ansible-core>=2.15'`), git, and `gcloud` or `az`. **On Windows, run the deploy from WSL (Ubuntu)**, because Ansible does not run
 natively on Windows. Docker Desktop's WSL integration gives WSL the `docker` command. Clone the
 repository inside WSL (`cd ~ && git clone ...`), not under `/mnt/c`: Ansible ignores `ansible.cfg`
 in a Windows folder.
@@ -72,7 +72,8 @@ ansible-playbook deploy.yml -e target=vps      # your VPS (Docker Compose behind
 
 This creates the media bucket, builds the images, deploys them (pushes to the cloud, or copies them
 to the VPS over SSH), smoke-tests the site, then points the Cloudflare DNS records at it. The first
-HTTPS certificate can take 15 to 60 minutes after DNS is in place.
+HTTPS certificate can take 15 to 60 minutes after DNS is in place on Google Cloud and Azure; on a VPS,
+Caddy is restarted after the DNS change and usually has it within a minute.
 
 ## 4. After the first deploy
 
@@ -92,6 +93,14 @@ cd infra/ansible && ansible-playbook deploy.yml -e target=gcp   # or azure, or v
 ```
 
 New migrations run automatically when the new API starts.
+
+If the playbook stops with "the gcp Terraform state still holds the Cloudflare records", the site was
+deployed before the DNS records moved to their own Terraform root (`infra/terraform/dns`). Move them
+once, without touching Cloudflare, then deploy again:
+
+```sh
+python3 tools/cloudmigrate/cloudmigrate.py dns adopt gcp      # or azure
+```
 
 ## Moving to another host or database
 
