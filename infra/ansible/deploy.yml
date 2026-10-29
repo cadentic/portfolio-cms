@@ -63,22 +63,27 @@
       changed_when: false
 
     # Deployments made before the dns/ root kept the Cloudflare records in the
-    # gcp/ or azure/ state. Applying that state now would delete them.
-    - name: Check for DNS records in this root's state
-      when: target != 'vps'
+    # gcp/ or azure/ state. Applying that state would delete them, and the
+    # dns/ root would create a second set next to them, whatever the target.
+    # (A root whose remote backend is not set up on this machine is skipped.)
+    - name: Check the gcp and azure states for DNS records
       ansible.builtin.command:
-        argv: "{{ tf_base + ['state', 'list'] }}"
-      register: tf_state_list
+        argv: ["terraform", "-chdir={{ tf_root }}/{{ item }}", "state", "list"]
+      loop: [gcp, azure]
+      register: tf_state_lists
       changed_when: false
       failed_when: false
 
-    - name: Stop if the DNS records still live in the {{ target }} state
-      when: target != 'vps' and (tf_state_list.stdout_lines | select('match', 'module\\.dns\\.') | list | length > 0)
+    - name: Stop if DNS records still live in the gcp or azure state
+      vars:
+        legacy_roots: "{{ tf_state_lists.results | selectattr('stdout', 'defined')
+                          | selectattr('stdout', 'search', '(?m)^module[.]dns[.]') | map(attribute='item') | list }}"
+      when: legacy_roots | length > 0
       ansible.builtin.fail:
         msg: >-
-          The {{ target }} Terraform state still holds the Cloudflare records, which now belong to
-          infra/terraform/dns. Move them once, from the repository root, with
-          `python3 tools/cloudmigrate/cloudmigrate.py dns adopt {{ target }}`, then run this again.
+          The {{ legacy_roots | join(' and ') }} Terraform state still holds the Cloudflare records, which now
+          belong to infra/terraform/dns. Move them once, from the repository root, with
+          `python3 tools/cloudmigrate/cloudmigrate.py dns adopt {{ legacy_roots | first }}`, then run this again.
 
     # The media bucket comes first: the site's settings include its key, if any.
     - name: Read media_storage from secret.tfvars
@@ -240,6 +245,9 @@
             ansible_host: "{{ tf_out.ssh.value.host }}"
             ansible_user: "{{ tf_out.ssh.value.user }}"
             ansible_port: "{{ tf_out.ssh.value.port }}"
+            # The last play runs on this machine (connection: local) and hands
+            # one task to the server, which must still go over SSH.
+            ansible_connection: ssh
             vps_dir: "{{ tf_out.ssh.value.dir }}"
             image_tag: "{{ image_tag }}"
             vps_images: "{{ vps_images }}"
@@ -380,10 +388,20 @@
           register: tf_dns
           changed_when: "'No changes.' not in tf_dns.stdout"
 
+        - name: Check whether the site already answers over HTTPS (VPS)
+          when: target == 'vps' and tf_dns is not changed
+          ansible.builtin.uri:
+            url: "{{ tf_out.site_url.value }}/robots.txt"
+            status_code: 200
+            timeout: 10
+          register: vps_https
+          failed_when: false
+
         # Caddy started before the domain pointed here, so its first certificate
-        # request failed and it backs off for up to hours. A restart retries now.
+        # request failed and it backs off for up to hours. A restart retries now,
+        # also on a re-run while the site still has no certificate.
         - name: Restart Caddy so it requests the certificates now (VPS)
-          when: target == 'vps' and tf_dns is changed
+          when: target == 'vps' and (tf_dns is changed or vps_https.status | default(0) != 200)
           delegate_to: vps
           become: "{{ hostvars['vps'].ansible_user != 'root' }}"
           ansible.builtin.command:

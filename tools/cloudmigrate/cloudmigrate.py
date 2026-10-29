@@ -824,37 +824,6 @@ def media_copy(src: MediaStore, dst: MediaStore) -> Path | None:
 
 # --- terraform / ansible helpers ------------------------------------------------------------
 
-def dns_target() -> str | None:
-    """Which target the dns/ root currently points the domain at, if known."""
-    if not shutil.which("terraform"):
-        return None
-    p = subprocess.run(["terraform", f"-chdir={REPO / 'infra/terraform/dns'}", "output", "-raw", "site_target"],
-                       capture_output=True, text=True)
-    out = p.stdout.strip()
-    return out if p.returncode == 0 and out in TARGETS else None
-
-
-class SwitchedFail(Fail):
-    """A deploy failed after the domain was already pointed at the new host."""
-
-
-def deploy(target: str, *, switch_dns: bool, vps_up: str = "all", extra: list[str] | None = None) -> None:
-    argv = ["ansible-playbook", "deploy.yml", "-e", f"target={target}",
-            "-e", f"switch_dns={'true' if switch_dns else 'false'}", "-e", f"vps_up={vps_up}", *(extra or [])]
-    before = dns_target() if switch_dns else None
-    say(f"  $ (cd infra/ansible && {' '.join(argv)})")
-    if subprocess.run(argv, cwd=REPO / "infra" / "ansible").returncode == 0:
-        return
-    now = dns_target() if switch_dns else None
-    if switch_dns and now == target and before != target:
-        raise SwitchedFail(f"the deploy to {target} failed after the domain was pointed at it, so {target} is now "
-                           "the live site. Fix the error above and finish with: "
-                           f"(cd infra/ansible && ansible-playbook deploy.yml -e target={target})")
-    raise Fail(f"the deploy to {target} failed; the domain points at {now or before or 'the same host as before'}")
-
-
-# --- dns adopt: records from an older gcp/ or azure/ state into dns/ ----------------------------
-
 def tf_root(name: str) -> Path:
     return REPO / "infra" / "terraform" / name
 
@@ -867,14 +836,104 @@ def _tf(root: Path, *args: str) -> str:
     return p.stdout
 
 
-def tf_state_pull(root: Path) -> dict | None:
+def _tf_read(root: Path, *args: str) -> str:
+    """A read-only terraform command, after `terraform init` if the root's backend is not set up here yet."""
     try:
-        out = _tf(root, "state", "pull")
+        return _tf(root, *args)
     except Fail as e:
         if "terraform init" not in str(e):
             raise
-        _tf(root, "init", "-input=false")  # a backend block that this machine has not set up yet
-        out = _tf(root, "state", "pull")
+        _tf(root, "init", "-input=false")
+        return _tf(root, *args)
+
+
+def dns_target() -> str | None:
+    """Which target the dns/ root last pointed the domain at, if known."""
+    if not shutil.which("terraform"):
+        return None
+    try:
+        out = _tf_read(tf_root("dns"), "output", "-raw", "site_target").strip()
+    except Fail:
+        return None
+    return out if out in TARGETS else None
+
+
+def _site_keys(records: list[dict]) -> dict[str, str]:
+    """{key: content} keyed as modules/cloudflare-dns keys the site records: type:name:position within them."""
+    out: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    for r in records:
+        group = f"{r['type']}:{r['name']}"
+        out[f"{group}:{counts.get(group, 0)}"] = str(r["content"]).strip('"')
+        counts[group] = counts.get(group, 0) + 1
+    return out
+
+
+def dns_site_records() -> dict[str, str] | None:
+    """The site records the dns/ state holds, {key: content}, or None if it cannot be read."""
+    if not shutil.which("terraform"):
+        return None
+    try:
+        out = _tf_read(tf_root("dns"), "show", "-json")
+    except Fail:
+        return None
+    records: dict[str, str] = {}
+
+    def walk(module: dict) -> None:
+        for r in module.get("resources", []):
+            if r.get("type") == "cloudflare_dns_record" and r.get("name") == "site":
+                records[str(r.get("index"))] = str((r.get("values") or {}).get("content", "")).strip('"')
+        for child in module.get("child_modules", []):
+            walk(child)
+    walk((json.loads(out or "{}").get("values") or {}).get("root_module") or {})
+    return records
+
+
+def target_site_records(target: str) -> dict[str, str] | None:
+    """The records that point the domain at a deployed target, from its root's site_records output."""
+    try:
+        return _site_keys(json.loads(_tf_read(tf_root(target), "output", "-json", "site_records")))
+    except (Fail, ValueError, KeyError, TypeError):
+        return None
+
+
+class SwitchedFail(Fail):
+    """A deploy failed after the domain was pointed (at least partly) at the new host."""
+
+
+def deploy(target: str, *, switch_dns: bool, vps_up: str = "all", extra: list[str] | None = None) -> None:
+    argv = ["ansible-playbook", "deploy.yml", "-e", f"target={target}",
+            "-e", f"switch_dns={'true' if switch_dns else 'false'}", "-e", f"vps_up={vps_up}", *(extra or [])]
+    host = dns_target() if switch_dns else None
+    before = dns_site_records() if switch_dns else None
+    say(f"  $ (cd infra/ansible && {' '.join(argv)})")
+    if subprocess.run(argv, cwd=REPO / "infra" / "ansible").returncode == 0:
+        return
+    finish = f"(cd infra/ansible && ansible-playbook deploy.yml -e target={target})"
+    if not switch_dns:
+        raise Fail(f"the deploy to {target} failed; DNS was not changed")
+    # The site_target output changes even when the DNS apply fails, so look at the records themselves.
+    now = dns_site_records()
+    if before is None or now is None:
+        raise SwitchedFail(f"the deploy to {target} failed, and the dns/ state could not be read, so the domain may "
+                           f"already point at {target}. Check with `cloudmigrate.py check`, fix the error above and "
+                           f"finish with: {finish}")
+    if now == before:
+        raise Fail(f"the deploy to {target} failed before DNS changed; the domain still points at "
+                   f"{host or 'the same host as before'}")
+    want = target_site_records(target) or {}
+    if want and all(now.get(k) == v for k, v in want.items()):
+        raise SwitchedFail(f"the deploy to {target} failed after the domain was pointed at it, so {target} is now "
+                           f"the live site. Fix the error above and finish with: {finish}")
+    raise SwitchedFail(f"the deploy to {target} failed while the domain was being pointed at it: some DNS records "
+                       f"already point at {target}, so some visitors reach it. Fix the error above and finish with: "
+                       f"{finish}")
+
+
+# --- dns adopt: records from an older gcp/ or azure/ state into dns/ ----------------------------
+
+def tf_state_pull(root: Path) -> dict | None:
+    out = _tf_read(root, "state", "pull")
     return json.loads(out) if out.strip() else None
 
 
@@ -886,15 +945,32 @@ def _in_dns_module(r: dict) -> bool:
     return r.get("module", "") == "module.dns" or r.get("module", "").startswith(("module.dns.", "module.dns["))
 
 
-def adopt_dns_state(old: dict, dns: dict | None, target: str) -> tuple[dict, dict]:
+def _record_ids(resources: list[dict]) -> set:
+    return {(r.get("module"), r.get("type"), r.get("name"), json.dumps(inst.get("index_key")),
+             (inst.get("attributes") or {}).get("id")) for r in resources for inst in r.get("instances", [])}
+
+
+def legacy_dns_roots() -> list[str]:
+    """The gcp/ and azure/ roots whose state still holds Cloudflare records (deployed before the dns/ root).
+    A root whose remote backend is not set up on this machine cannot be read and is not listed."""
+    if not shutil.which("terraform"):
+        return []
+    found = []
+    for name in ("gcp", "azure"):
+        p = subprocess.run(["terraform", f"-chdir={tf_root(name)}", "state", "list"], capture_output=True, text=True)
+        if p.returncode == 0 and any(line.startswith("module.dns.") for line in p.stdout.splitlines()):
+            found.append(name)
+    return found
+
+
+def adopt_dns_state(old: dict, dns: dict | None, target: str) -> tuple[dict, dict | None]:
     """Move the module.dns resources of an old gcp/ or azure/ state into a dns/
-    state. Returns (the old state without them, the new dns state)."""
+    state. Returns (the old state without them, the new dns state). The dns
+    state is None when it already holds exactly these records: an earlier run
+    stopped between its two pushes, and only the old state is left to change."""
     moved = [r for r in old.get("resources", []) if _in_dns_module(r)]
     if not moved:
         raise Fail("this state has no DNS records to move (module.dns); nothing to do")
-    if dns and any(_in_dns_module(r) for r in dns.get("resources", [])):
-        raise Fail("the dns/ state already holds the records. Check `terraform -chdir=infra/terraform/dns state list` "
-                   "and remove the duplicate from one of the two states by hand")
     adopted = []
     for r in moved:
         r = json.loads(json.dumps(r))
@@ -913,12 +989,33 @@ def adopt_dns_state(old: dict, dns: dict | None, target: str) -> tuple[dict, dic
         adopted.append(r)
     rest = dict(old, serial=old.get("serial", 0) + 1,
                 resources=[r for r in old.get("resources", []) if not _in_dns_module(r)])
+    held = [r for r in (dns or {}).get("resources", []) if _in_dns_module(r)]
+    if held:
+        if _record_ids(held) == _record_ids(adopted):
+            return rest, None
+        raise Fail("the dns/ state already holds other Cloudflare records than this state. Compare "
+                   "`terraform -chdir=infra/terraform/dns state list` with the old root's, and the records in "
+                   "Cloudflare, before changing either state by hand")
     new = dict(dns) if dns else {"version": 4, "terraform_version": old.get("terraform_version"), "serial": 0,
                                  "lineage": str(uuid.uuid4()), "outputs": {}, "resources": [], "check_results": None}
     new["serial"] = new.get("serial", 0) + 1
     new["resources"] = list(new.get("resources", [])) + adopted
     new["outputs"] = dict(new.get("outputs") or {}, site_target={"value": target, "type": "string"})
     return rest, new
+
+
+def _write_private(path: Path, text: str) -> Path:
+    """Write a new file only its owner can read (state files hold secrets); never overwrite one."""
+    for n in range(100):
+        candidate = path if n == 0 else path.with_name(f"{path.stem}-{n}{path.suffix}")
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        return candidate
+    raise Fail(f"could not create a backup file next to {path}")
 
 
 def cmd_dns(args) -> int:
@@ -930,25 +1027,30 @@ def cmd_dns(args) -> int:
         raise Fail(f"infra/terraform/{args.frm} has no state on this machine or in its backend")
     dns = tf_state_pull(dns_root)
     rest, new = adopt_dns_state(old, dns, args.frm)
-    count = sum(len(r.get("instances", [])) for r in new["resources"] if _in_dns_module(r))
+    count = sum(len(r.get("instances", [])) for r in old["resources"] if _in_dns_module(r))
     paths = {}
     for label, state in [(f"{args.frm} state before dns adopt", old), ("dns state before dns adopt", dns),
                          (f"{args.frm} state after dns adopt", rest), ("dns state after dns adopt", new)]:
-        if state is None:
-            continue
-        path = backup_path(label).with_suffix(".tfstate")
-        path.write_text(json.dumps(state, indent=2) + "\n")
-        path.chmod(0o600)  # state files hold secrets
-        paths[label] = path
-    say(f"Moving {count} Cloudflare records from infra/terraform/{args.frm} to infra/terraform/dns "
-        f"(backups in {BACKUPS.relative_to(REPO)}/).")
+        if state is not None:
+            paths[label] = _write_private(backup_path(label).with_suffix(".tfstate"), json.dumps(state, indent=2) + "\n")
+    rel = BACKUPS.relative_to(REPO) if BACKUPS.is_relative_to(REPO) else BACKUPS
+    if new is None:
+        say(f"infra/terraform/dns already holds these {count} records (an earlier run stopped half way); "
+            f"removing them from infra/terraform/{args.frm} (backups in {rel}/).")
+    else:
+        say(f"Moving {count} Cloudflare records from infra/terraform/{args.frm} to infra/terraform/dns "
+            f"(backups in {rel}/).")
     confirm("Records are not changed in Cloudflare, only which Terraform state owns them.", args.yes)
-    tf_state_push(old_root, paths[f"{args.frm} state after dns adopt"])
-    try:
+    # dns/ first: if the second push never happens, both states hold the records, the deploy playbook
+    # refuses to run, and running this again finishes the job.
+    if new is not None:
         tf_state_push(dns_root, paths["dns state after dns adopt"])
-    except Fail as e:
-        raise Fail(f"{e}\nThe records are now in no state. Retry with: terraform -chdir=infra/terraform/dns state push "
-                   f"{paths['dns state after dns adopt'].resolve()}") from None
+    try:
+        tf_state_push(old_root, paths[f"{args.frm} state after dns adopt"])
+    except BaseException:
+        say(f"\ninfra/terraform/dns holds the records, but they are still in infra/terraform/{args.frm} too. "
+            f"Run `cloudmigrate.py dns adopt {args.frm}` again to finish.")
+        raise
     say(f"Done. Deploy as usual: (cd infra/ansible && ansible-playbook deploy.yml -e target={args.frm})")
     return 0
 
@@ -1007,6 +1109,10 @@ def check_config(cfg: dict, to: str, db_to: str | None, frm: str | None = None) 
     if frm == "vps" and to != "vps" and local_db and db_to != "neon":
         raise Fail(f"the live database is the VPS container (vps_local_db = true), and {to} uses database_url (Neon). "
                    "Move the data too: --db-from vps --db-to neon.")
+    if frm is None and to != "vps" and local_db and db_to != "neon":
+        raise Fail("secret.tfvars has vps_local_db = true, so the live data may be in the VPS container, and where "
+                   "the domain points cannot be read here. Say where the site runs now with --from, or move the "
+                   "data with --db-from vps --db-to neon.")
     media = cfg.get("media_storage") or "local"
     if media != "local" and (to, media) not in SAME_CLOUD and not cfg.get("media_access_key"):
         raise Fail(f"a site on {to} reaches the {media} media bucket with a key limited to it: "
@@ -1094,6 +1200,8 @@ def cmd_check(args) -> int:
              f"{cfg.get('media_azure_container') or 'media'}", "local": "the server's media volume"}.get(media, media)
     say(f"  media            {media}: {where}{', with a bucket key' if cfg.get('media_access_key') else ''}")
     say(f"\nThe domain points at: {dns_target() or 'unknown (the dns/ root has not been applied from this machine)'}")
+    for name in legacy_dns_roots():
+        say(f"The {name} state still holds the Cloudflare records: run `cloudmigrate.py dns adopt {name}`.")
     return 0
 
 
@@ -1158,6 +1266,9 @@ def cmd_move(args) -> int:
                       stop_before_dns=args.stop_before_dns)
     check_config(cfg, args.to, args.db_to, frm)
     media_preflight(cfg, frm, args.to)
+    if legacy := legacy_dns_roots():
+        raise Fail(f"the {' and '.join(legacy)} Terraform state still holds the Cloudflare records (a deployment "
+                   f"made before infra/terraform/dns). Run `cloudmigrate.py dns adopt {legacy[0]}` first.")
     if not args.db_to and (args.to != "vps" or not cfg.get("vps_local_db")):
         neon_preflight(cfg, args.client)
     tools = ["terraform", "ansible-playbook", "docker"] + (["ssh"] if "vps" in (args.to, frm, db_from, args.db_to) else [])
@@ -1193,6 +1304,13 @@ def cmd_move(args) -> int:
                            "and do not run the move again: that would copy the old data over the new.") from None
             raise
         except Fail as e:
+            if frozen and s.kind == "deploy" and frm == args.to and s.args["vps_up"] == "all":
+                # Same host, new database: the stack restarts on the new DATABASE_URL before the checks that failed.
+                raise Fail(f"{e}\nThe site on {args.to} may already run on the {args.db_to} database. Fix the error "
+                           f"and finish with: (cd infra/ansible && ansible-playbook deploy.yml -e target={args.to}). "
+                           "Do not run the move again: that would copy the old data over the new. To go back "
+                           f"instead: undo the secret.tfvars change, deploy, and only then run "
+                           f"`cloudmigrate.py db unfreeze {db_from}`.") from None
             if frozen:
                 raise Fail(f"{e}\nThe {db_from} database is still read-only. To reopen the old site for writes: "
                            f"python3 tools/cloudmigrate/cloudmigrate.py db unfreeze {db_from}") from None
