@@ -33,7 +33,7 @@ case "$cmd" in
     if command -v psql >/dev/null 2>&1; then
       psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f content/wordpress/seed.sql
     else
-      docker run --rm -i --network host postgres:16 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < content/wordpress/seed.sql
+      docker run --rm -i --network host postgres:18-alpine psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < content/wordpress/seed.sql
     fi
     ;;
   *) sed -n '2,13p' "$0"; exit 2 ;;

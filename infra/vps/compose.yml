@@ -1,0 +1,118 @@
+# Production stack for a single VPS: Caddy (HTTPS with automatic Let's Encrypt
+# certificates) -> web (Angular SSR) -> api, plus the queue worker and, when
+# vps_local_db = true, PostgreSQL 18. Only Caddy is reachable from outside.
+#
+# Managed by the deploy playbook (ansible-playbook deploy.yml -e target=vps),
+# which copies this file, the Caddyfile and a .env rendered from
+# secret.tfvars to vps_dir (default /opt/portfolio) and loads the images.
+# On the server:  cd /opt/portfolio && docker compose ps | logs -f api
+name: portfolio
+
+x-api-env: &api-env
+  APP_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?set in .env}
+  APP_SECRET: ${APP_SECRET:?set in .env}
+  PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+  CORS_ALLOWED_ORIGINS: ${PUBLIC_SITE_URL}
+  TRUST_CLIENT_IP_HEADER: "true" # only the web container can reach the API
+  FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+  ADMIN_EMAILS: ${ADMIN_EMAILS}
+  ADMIN_UIDS: ${ADMIN_UIDS:-}
+  ADMIN_ALERT_EMAIL: ${ADMIN_ALERT_EMAIL:-}
+  EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+  EMAIL_BREVO_API_KEY: ${EMAIL_BREVO_API_KEY}
+  EMAIL_BREVO_WEBHOOK_SECRET: ${EMAIL_BREVO_WEBHOOK_SECRET}
+  EMAIL_MAILJET_API_KEY: ${EMAIL_MAILJET_API_KEY}
+  EMAIL_MAILJET_SECRET_KEY: ${EMAIL_MAILJET_SECRET_KEY}
+  EMAIL_MAILJET_WEBHOOK_SECRET: ${EMAIL_MAILJET_WEBHOOK_SECRET}
+  GTM_ID: ${GTM_ID:-}
+  GA4_MEASUREMENT_ID: ${GA4_MEASUREMENT_ID:-}
+  # Media: the "media" volume (local), or a private bucket with a key limited to it.
+  MEDIA_STORAGE: ${MEDIA_STORAGE:-local}
+  MEDIA_LOCAL_DIR: /data/media
+  MEDIA_GCS_BUCKET: ${MEDIA_GCS_BUCKET:-}
+  MEDIA_GCS_CREDENTIALS: ${MEDIA_GCS_CREDENTIALS:-}
+  MEDIA_AZURE_ACCOUNT: ${MEDIA_AZURE_ACCOUNT:-}
+  MEDIA_AZURE_CONTAINER: ${MEDIA_AZURE_CONTAINER:-}
+  MEDIA_AZURE_SAS: ${MEDIA_AZURE_SAS:-}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: 10m, max-file: "3" }
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    logging: *logging
+
+  web:
+    image: portfolio-web:${IMAGE_TAG:?set in .env}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+      API_INTERNAL_URL: http://api:8080
+      NG_ALLOWED_HOSTS: ${DOMAIN},www.${DOMAIN}
+      TRUSTED_PROXY_HOPS: "1" # Caddy
+      FIREBASE_API_KEY: ${FIREBASE_API_KEY}
+      FIREBASE_AUTH_DOMAIN: ${FIREBASE_AUTH_DOMAIN:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
+
+  api:
+    image: portfolio-api:${IMAGE_TAG:?set in .env}
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      RUN_WORKER: "false"
+    volumes: [media:/data/media]
+    depends_on:
+      db: { condition: service_healthy, required: false }
+    logging: *logging
+
+  worker:
+    image: portfolio-api:${IMAGE_TAG:?set in .env}
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      RUN_WORKER: "true"
+      WORKER_ID: vps-worker-1
+    volumes: [media:/data/media]
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
+
+  # Only with COMPOSE_PROFILES=localdb (vps_local_db = true). Not published:
+  # tools/cloudmigrate reaches it with `docker compose exec` over SSH.
+  db:
+    image: postgres:18-alpine
+    profiles: [localdb]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: portfolio
+    volumes: [pgdata18:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:
+  media:
+  pgdata18:

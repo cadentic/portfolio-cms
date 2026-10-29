@@ -1499,7 +1499,7 @@ ON CONFLICT (source, source_id) WHERE source IS NOT NULL DO UPDATE SET
 WHERE cms_pages.status = 'draft' AND cms_pages.updated_at = cms_pages.created_at;
 
 -- Report items skipped because their slug is taken by other content.
-DO $$
+DO $wp$
 DECLARE missing text;
 BEGIN
   SELECT string_agg(v.slug, ', ') INTO missing
@@ -1592,7 +1592,7 @@ BEGIN
   IF missing IS NOT NULL THEN
     RAISE NOTICE 'wordpress import skipped (slug already in use): %', missing;
   END IF;
-END $$;
+END $wp$;
 
 -- Page hierarchy (only set where the item has no parent yet).
 UPDATE cms_pages c SET parent_id = par.id FROM cms_pages par
