@@ -242,4 +242,47 @@ p{color:var(--muted)}
  .sitemap-grid{grid-template-columns:1fr}
  .center-card{margin:40px 0;padding:24px}
 }
+/* motion: hero entrance, scroll reveals (ScrollRevealDirective) and neon hover glow */
+:root{--neon:142,240,196;--glow:0 0 0 1px rgba(var(--neon),.55),0 0 18px rgba(var(--neon),.35),0 0 46px rgba(var(--neon),.18)}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@keyframes panel-in{from{opacity:0;transform:translateY(30px) rotate(3deg) scale(.97)}to{opacity:1;transform:rotate(1deg)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(var(--neon),.55)}50%{box-shadow:0 0 0 7px rgba(var(--neon),0)}}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(-40px,30px)}}
+@keyframes caret{50%{opacity:0}}
+.hero-grid>div:first-child>*{animation:rise .7s cubic-bezier(.2,.7,.2,1) both}
+.hero-grid>div:first-child>:nth-child(2){animation-delay:.08s}
+.hero-grid>div:first-child>:nth-child(3){animation-delay:.16s}
+.hero-grid>div:first-child>:nth-child(4){animation-delay:.24s}
+.hero-grid>div:first-child>:nth-child(5){animation-delay:.32s}
+.hero-panel{animation:panel-in .9s .2s cubic-bezier(.2,.7,.2,1) backwards}
+.hero:before{animation:drift 14s ease-in-out infinite}
+.hero h1 em{text-shadow:0 0 22px rgba(var(--neon),.35)}
+.availability .dot{animation:pulse 2.2s infinite}
+.code-lines:after{content:"";display:inline-block;width:.55em;height:1em;margin-left:3px;vertical-align:-2px;background:var(--accent);animation:caret 1s steps(1) infinite}
+/* neon hover */
+.btn{transition:transform .2s,background .2s,border .2s,box-shadow .25s}
+.btn-primary:hover{box-shadow:0 0 14px rgba(var(--neon),.6),0 0 34px rgba(var(--neon),.3)}
+.btn-dark-outline:hover,.btn-outline:hover{border-color:var(--accent);box-shadow:var(--glow)}
+.btn-dark-outline:hover{color:var(--accent)}
+.project-card,.client-logo,.blog-feature,.contact-card,.about-stamp,.article-card,.chip,.hero-photo img,.mega-card{transition:transform .25s,box-shadow .3s,border-color .3s,color .3s}
+.project-card:hover,.blog-feature:hover,.article-card:hover{border-color:rgba(var(--neon),.9);box-shadow:var(--glow)}
+.project-card:hover .project-visual{box-shadow:inset 0 0 28px rgba(var(--neon),.35)}
+.project-card:hover h3{color:var(--accent-strong)}
+.client-logo:hover{transform:translateY(-3px);border-color:rgba(var(--neon),.9);box-shadow:var(--glow);color:var(--accent-strong)}
+.contact-card:hover,.about-stamp:hover{box-shadow:var(--glow)}
+.about-stamp:hover .big{text-shadow:0 0 14px rgba(var(--neon),.6),0 0 34px rgba(var(--neon),.3)}
+.chip:hover{border-color:var(--accent);box-shadow:0 0 10px rgba(var(--neon),.45)}
+.hero-panel:hover .hero-photo img{border-color:var(--accent);box-shadow:0 0 18px rgba(var(--neon),.45),0 12px 40px #0006}
+.metric:hover strong{text-shadow:0 0 12px rgba(var(--neon),.75),0 0 30px rgba(var(--neon),.35)}
+.timeline-item:before{transition:box-shadow .3s,transform .3s}
+.timeline-item:hover:before{transform:scale(1.4);box-shadow:0 0 0 3px rgba(var(--neon),.25),0 0 16px rgba(var(--neon),.8)}
+.timeline-item:hover h3{color:var(--accent);text-shadow:0 0 14px rgba(var(--neon),.35)}
+.navlinks>a:hover,.nav-trigger:hover,.footer-links a:hover{text-shadow:0 0 10px rgba(var(--neon),.6)}
+.mega-card:hover{box-shadow:var(--glow)}
+.brand:hover .brand-mark{box-shadow:0 0 14px rgba(var(--neon),.7)}
+@media(hover:none){.project-card:hover,.client-logo:hover{transform:none}}
+/* after the hover rules so it wins; the directive drops these classes once the reveal finishes */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s cubic-bezier(.2,.7,.2,1) var(--reveal-delay,0ms),transform .7s cubic-bezier(.2,.7,.2,1) var(--reveal-delay,0ms)}
+.reveal.is-visible{opacity:1;transform:none}
+
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
