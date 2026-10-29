@@ -65,25 +65,50 @@
     # Deployments made before the dns/ root kept the Cloudflare records in the
     # gcp/ or azure/ state. Applying that state would delete them, and the
     # dns/ root would create a second set next to them, whatever the target.
-    # (A root whose remote backend is not set up on this machine is skipped.)
+    # A state that exists but cannot be read stops the run too.
     - name: Check the gcp and azure states for DNS records
-      ansible.builtin.command:
-        argv: ["terraform", "-chdir={{ tf_root }}/{{ item }}", "state", "list"]
-      loop: [gcp, azure]
-      register: tf_state_lists
+      ansible.builtin.shell:
+        cmd: |
+          for root in gcp azure; do
+            dir={{ tf_root | quote }}/$root
+            out=$(terraform -chdir="$dir" state list 2>&1); rc=$?
+            if [ $rc -ne 0 ] && grep -q 'terraform init' <<< "$out"; then
+              # A backend block this machine has not set up yet.
+              if out=$(terraform -chdir="$dir" init -input=false 2>&1); then
+                out=$(terraform -chdir="$dir" state list 2>&1); rc=$?
+              fi
+            fi
+            if [ $rc -eq 0 ]; then
+              if grep -q '^module\.dns\.' <<< "$out"; then echo "records $root"; fi
+            elif ! grep -q 'No state file was found' <<< "$out"; then
+              echo "unreadable $root"
+              out=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$out")
+              { grep -m 3 'Error' <<< "$out" || head -n 3 <<< "$out"; } >&2
+            fi
+          done
+        executable: /bin/bash
+      register: legacy_dns
       changed_when: false
-      failed_when: false
 
     - name: Stop if DNS records still live in the gcp or azure state
       vars:
-        legacy_roots: "{{ tf_state_lists.results | selectattr('stdout', 'defined')
-                          | selectattr('stdout', 'search', '(?m)^module[.]dns[.]') | map(attribute='item') | list }}"
+        legacy_roots: "{{ legacy_dns.stdout_lines | select('match', 'records ') | map('replace', 'records ', '') | list }}"
       when: legacy_roots | length > 0
       ansible.builtin.fail:
         msg: >-
           The {{ legacy_roots | join(' and ') }} Terraform state still holds the Cloudflare records, which now
           belong to infra/terraform/dns. Move them once, from the repository root, with
           `python3 tools/cloudmigrate/cloudmigrate.py dns adopt {{ legacy_roots | first }}`, then run this again.
+
+    - name: Stop if a gcp or azure state cannot be read
+      vars:
+        unreadable: "{{ legacy_dns.stdout_lines | select('match', 'unreadable ') | map('replace', 'unreadable ', '') | list }}"
+      when: unreadable | length > 0
+      ansible.builtin.fail:
+        msg: >-
+          Could not check whether the {{ unreadable | join(' and ') }} Terraform state still holds the Cloudflare
+          records: {{ legacy_dns.stderr }}. Sign in to the cloud that keeps that state and run this again. If this
+          site was never deployed there, comment out the backend block in infra/terraform/{{ unreadable | first }}/main.tf.
 
     # The media bucket comes first: the site's settings include its key, if any.
     - name: Read media_storage from secret.tfvars

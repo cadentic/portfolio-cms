@@ -73,12 +73,12 @@ If a step fails, the error says where the domain points now:
 - Usually that is still the old host. The old database stays frozen until you
   run `db unfreeze` (the error says so), so nothing is written to a database
   you are leaving.
-- If the deploy failed after the domain was switched, or while it was being
-  switched (the tool compares the records in the `dns/` state before and
-  after), the new host is live on the copied data, at least for some
-  visitors. Leave the old database frozen, fix the error, and finish with the
-  `ansible-playbook` command the error prints. Do not run `move` again: it
-  would copy the old data over the new.
+- If the DNS records had started to change (the tool compares the records in
+  the `dns/` state before and after), the error says whether the new host is
+  live, live for some visitors, or not reachable yet. In every case leave the
+  old database frozen, fix the error, and finish with the `ansible-playbook`
+  command the error prints. Do not run `move` again: it would copy the old
+  data over the new.
 - When only the database moves and the site stays on the same VPS
   (`move --to vps --db-to vps`), the stack restarts on the new database
   before the final checks, so a failure there is handled the same way. To go
@@ -89,12 +89,14 @@ Checks that run before anything starts:
 
 - Leaving a VPS whose database runs in its container (`vps_local_db = true`)
   needs `--db-from vps --db-to neon`, so the live data comes along. If the
-  `dns/` state cannot be read on this machine, so the current host is
-  unknown, pass `--from` as well.
+  current host is unknown (the `dns/` state cannot be read on this machine,
+  or its records match no single deployed target), pass `--from` as well.
 - A move that keeps using Neon stops if Neon is read-only, which means an
   earlier move left it behind and the live data is elsewhere.
 - A `gcp/` or `azure/` state that still holds the Cloudflare records stops the
-  move until `dns adopt` has run (next section).
+  move until `dns adopt` has run (next section). So does one that exists but
+  cannot be read, for example because you are not signed in to the cloud that
+  keeps it; the deploy playbook checks the same way.
 
 Neon's pooled host (`-pooler` in the name) is swapped for the direct host
 automatically, because `pg_dump` and the API's migrations need session

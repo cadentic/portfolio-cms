@@ -897,14 +897,33 @@ def target_site_records(target: str) -> dict[str, str] | None:
         return None
 
 
+def _routing(records: dict[str, str]) -> dict[str, str]:
+    """The records that send visitors somewhere (not Azure's asuid TXT verification records)."""
+    return {k: v for k, v in records.items() if k.split(":", 1)[0] in ("A", "AAAA", "CNAME")}
+
+
+def current_host() -> str | None:
+    """Where the domain points: the target whose records the dns/ state holds. The site_target output alone
+    is not enough, because Terraform updates it even when the DNS apply fails. None if unknown or mixed."""
+    records = dns_site_records()
+    if records is None:
+        return dns_target()
+    routed = _routing(records)
+    for target in TARGETS:
+        want = _routing(target_site_records(target) or {})
+        if want and routed == want:
+            return target
+    return None
+
+
 class SwitchedFail(Fail):
-    """A deploy failed after the domain was pointed (at least partly) at the new host."""
+    """A deploy failed after the DNS records began to change."""
 
 
 def deploy(target: str, *, switch_dns: bool, vps_up: str = "all", extra: list[str] | None = None) -> None:
     argv = ["ansible-playbook", "deploy.yml", "-e", f"target={target}",
             "-e", f"switch_dns={'true' if switch_dns else 'false'}", "-e", f"vps_up={vps_up}", *(extra or [])]
-    host = dns_target() if switch_dns else None
+    host = current_host() if switch_dns else None
     before = dns_site_records() if switch_dns else None
     say(f"  $ (cd infra/ansible && {' '.join(argv)})")
     if subprocess.run(argv, cwd=REPO / "infra" / "ansible").returncode == 0:
@@ -921,13 +940,21 @@ def deploy(target: str, *, switch_dns: bool, vps_up: str = "all", extra: list[st
     if now == before:
         raise Fail(f"the deploy to {target} failed before DNS changed; the domain still points at "
                    f"{host or 'the same host as before'}")
-    want = target_site_records(target) or {}
-    if want and all(now.get(k) == v for k, v in want.items()):
+    want = _routing(target_site_records(target) or {})
+    got = _routing(now)
+    if not want:
+        raise SwitchedFail(f"the deploy to {target} failed after the DNS records changed, so the domain may already "
+                           f"point at {target}. Fix the error above and finish with: {finish}")
+    if got == want:
         raise SwitchedFail(f"the deploy to {target} failed after the domain was pointed at it, so {target} is now "
                            f"the live site. Fix the error above and finish with: {finish}")
-    raise SwitchedFail(f"the deploy to {target} failed while the domain was being pointed at it: some DNS records "
-                       f"already point at {target}, so some visitors reach it. Fix the error above and finish with: "
-                       f"{finish}")
+    if any(got.get(k) == v and before.get(k) != v for k, v in want.items()):
+        raise SwitchedFail(f"the deploy to {target} failed while the domain was being pointed at it: some DNS records "
+                           f"point at {target} and some still at {host or 'the old host'}, so visitors reach both. "
+                           f"Fix the error above and finish with: {finish}")
+    raise SwitchedFail(f"the deploy to {target} failed while the domain was being moved: records of "
+                       f"{host or 'the old host'} were changed or removed, but none point at {target} yet. Fix the "
+                       f"error above and finish with: {finish}")
 
 
 # --- dns adopt: records from an older gcp/ or azure/ state into dns/ ----------------------------
@@ -952,13 +979,22 @@ def _record_ids(resources: list[dict]) -> set:
 
 def legacy_dns_roots() -> list[str]:
     """The gcp/ and azure/ roots whose state still holds Cloudflare records (deployed before the dns/ root).
-    A root whose remote backend is not set up on this machine cannot be read and is not listed."""
+    Raises Fail when a root's state exists but cannot be read, rather than taking it as clean."""
     if not shutil.which("terraform"):
         return []
     found = []
     for name in ("gcp", "azure"):
-        p = subprocess.run(["terraform", f"-chdir={tf_root(name)}", "state", "list"], capture_output=True, text=True)
-        if p.returncode == 0 and any(line.startswith("module.dns.") for line in p.stdout.splitlines()):
+        if not tf_root(name).is_dir():
+            continue
+        try:
+            out = _tf_read(tf_root(name), "state", "list")
+        except Fail as e:
+            if "No state file was found" in str(e):
+                continue
+            raise Fail(f"could not check whether the {name} Terraform state still holds the Cloudflare records:\n{e}\n"
+                       f"Sign in to the cloud that keeps the {name} state and retry. If this site was never deployed "
+                       f"to {name}, comment out the backend block in infra/terraform/{name}/main.tf again.") from None
+        if any(line.startswith("module.dns.") for line in out.splitlines()):
             found.append(name)
     return found
 
@@ -1199,9 +1235,13 @@ def cmd_check(args) -> int:
     where = {"gcs": f"gs://{cfg.get('media_gcs_bucket')}", "azure": f"az://{cfg.get('media_azure_account')}/"
              f"{cfg.get('media_azure_container') or 'media'}", "local": "the server's media volume"}.get(media, media)
     say(f"  media            {media}: {where}{', with a bucket key' if cfg.get('media_access_key') else ''}")
-    say(f"\nThe domain points at: {dns_target() or 'unknown (the dns/ root has not been applied from this machine)'}")
-    for name in legacy_dns_roots():
-        say(f"The {name} state still holds the Cloudflare records: run `cloudmigrate.py dns adopt {name}`.")
+    host = current_host()
+    say(f"\nThe domain points at: {host or 'unknown (the dns/ state is not readable here, or its records match no deployed target)'}")
+    try:
+        for name in legacy_dns_roots():
+            say(f"The {name} state still holds the Cloudflare records: run `cloudmigrate.py dns adopt {name}`.")
+    except Fail as e:
+        say(str(e))
     return 0
 
 
@@ -1257,10 +1297,10 @@ def cmd_media(args) -> int:
 
 def cmd_move(args) -> int:
     cfg = load_tfvars()
-    current = dns_target()
+    current = current_host()
     frm = args.from_ or current
     if args.from_ and current and args.from_ != current:
-        say(f"Note: the dns/ state says the domain points at {current}, not {args.from_}.")
+        say(f"Note: the DNS records point at {current}, not {args.from_}.")
     db_from = args.db_from or ({"vps": "neon", "neon": "vps"}.get(args.db_to) if args.db_to else None)
     steps = plan_move(frm, args.to, db_from, args.db_to, freeze_source=not args.no_freeze,
                       stop_before_dns=args.stop_before_dns)
@@ -1300,8 +1340,9 @@ def cmd_move(args) -> int:
                      replace=True, do_freeze=False, yes=True, unfreeze_target=True)
         except SwitchedFail as e:
             if frozen:
-                raise Fail(f"{e}\nThe new site runs on the {args.db_to} database. Leave {db_from} read-only, "
-                           "and do not run the move again: that would copy the old data over the new.") from None
+                raise Fail(f"{e}\nThe data is in the {args.db_to} database now, which {args.to} uses. Leave {db_from} "
+                           "read-only until that deploy has finished, and do not run the move again: that would copy "
+                           "the old data over the new.") from None
             raise
         except Fail as e:
             if frozen and s.kind == "deploy" and frm == args.to and s.args["vps_up"] == "all":

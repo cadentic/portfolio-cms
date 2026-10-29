@@ -177,7 +177,7 @@ class DeployTest(unittest.TestCase):
     def deploy(self, before, after, *, switch_dns=True):
         failed = subprocess.CompletedProcess([], 2)
         with mock.patch.object(cm.subprocess, "run", return_value=failed), \
-                mock.patch.object(cm, "dns_target", return_value="gcp"), \
+                mock.patch.object(cm, "current_host", return_value="gcp"), \
                 mock.patch.object(cm, "dns_site_records", side_effect=[before, after]), \
                 mock.patch.object(cm, "target_site_records", return_value=VPS_RECORDS), mock.patch.object(cm, "say"):
             cm.deploy("vps", switch_dns=switch_dns)
@@ -189,8 +189,25 @@ class DeployTest(unittest.TestCase):
     def test_failure_during_the_switch(self):
         # Terraform changed the A record, then Cloudflare refused the CNAME.
         partly = {**GCP_RECORDS, "A:cadentic.dev:0": "203.0.113.10"}
-        with self.assertRaisesRegex(cm.SwitchedFail, "some DNS records already point at vps"):
+        with self.assertRaisesRegex(cm.SwitchedFail, "some DNS records point at vps and some still at gcp"):
             self.deploy(GCP_RECORDS, partly)
+
+    def test_old_records_left_beside_the_new_ones(self):
+        # The updates went through, deleting Google's other addresses did not: visitors reach both hosts.
+        both = {**GCP_RECORDS, **VPS_RECORDS}
+        with self.assertRaisesRegex(cm.SwitchedFail, "some still at gcp"):
+            self.deploy(GCP_RECORDS, both)
+
+    def test_old_records_removed_but_none_added(self):
+        only_deletes = {"A:cadentic.dev:0": GCP_RECORDS["A:cadentic.dev:0"],
+                        "CNAME:www.cadentic.dev:0": "ghs.googlehosted.com"}
+        with self.assertRaisesRegex(cm.SwitchedFail, "none point at vps yet"):
+            self.deploy(GCP_RECORDS, only_deletes)
+
+    def test_verification_records_do_not_count(self):
+        with_txt = {**VPS_RECORDS, "TXT:asuid.cadentic.dev:0": "left-over"}
+        with self.assertRaisesRegex(cm.SwitchedFail, "vps is now the live site"):
+            self.deploy(GCP_RECORDS, with_txt)
 
     def test_failure_before_the_switch(self):
         with self.assertRaisesRegex(cm.Fail, "still points at gcp") as e:
@@ -207,6 +224,15 @@ class DeployTest(unittest.TestCase):
             with mock.patch.object(cm.subprocess, "run", return_value=failed), mock.patch.object(cm, "say"):
                 cm.deploy("vps", switch_dns=False)
         self.assertNotIsInstance(e.exception, cm.SwitchedFail)
+
+    def test_current_host_comes_from_the_records(self):
+        targets = {"gcp": GCP_RECORDS, "vps": VPS_RECORDS, "azure": None}
+        with mock.patch.object(cm, "target_site_records", side_effect=targets.get), \
+                mock.patch.object(cm, "dns_target", return_value="vps"):
+            for records, host in [(GCP_RECORDS, "gcp"), ({**GCP_RECORDS, **VPS_RECORDS}, None), ({}, None),
+                                  (None, "vps")]:  # unreadable state: fall back to the site_target output
+                with mock.patch.object(cm, "dns_site_records", return_value=records):
+                    self.assertEqual(cm.current_host(), host, records)
 
     def test_records_from_terraform(self):
         show = {"values": {"root_module": {"child_modules": [{"address": "module.dns", "resources": [
@@ -242,7 +268,7 @@ class MoveTest(unittest.TestCase):
                 raise cm.Fail("the smoke test failed")
         err = io.StringIO()
         with mock.patch.object(cm, "load_tfvars", return_value=cfg), \
-                mock.patch.object(cm, "dns_target", return_value=current), \
+                mock.patch.object(cm, "current_host", return_value=current), \
                 mock.patch.object(cm, "deploy", side_effect=fake_deploy), \
                 mock.patch.object(cm, "resolve", return_value=mock.Mock(label="db")), \
                 mock.patch.object(cm, "info", return_value={"read_only": False}), \
@@ -272,7 +298,7 @@ class MoveTest(unittest.TestCase):
     def test_leftover_dns_records_stop_the_move_first(self):
         cfg = {"vps_ipv4": "203.0.113.10", "database_url": "postgres://u:p@neon.example/p"}
         with mock.patch.object(cm, "legacy_dns_roots", return_value=["gcp"]), \
-                mock.patch.object(cm, "load_tfvars", return_value=cfg), mock.patch.object(cm, "dns_target", return_value=None), \
+                mock.patch.object(cm, "load_tfvars", return_value=cfg), mock.patch.object(cm, "current_host", return_value=None), \
                 mock.patch.object(cm, "neon_preflight") as neon, mock.patch.object(cm, "deploy") as deploy:
             with self.assertRaisesRegex(cm.Fail, "dns adopt gcp"):
                 cm.cmd_move(cm.argparse.Namespace(to="vps", from_=None, db_to=None, db_from=None, no_freeze=False,
@@ -546,6 +572,13 @@ class DnsAdoptTest(unittest.TestCase):
             self.assertEqual(cm.main(["dns", "adopt", "gcp", "--yes"]), 0)  # and running it again finishes
             self.assertEqual(cm.legacy_dns_roots(), [])
             self.assertEqual(cm.main(["dns", "adopt", "gcp", "--yes"]), 1)  # nothing left to move
+            # A root whose state lives in a backend this machine cannot reach is not taken as clean.
+            (tmp / "infra/terraform/azure").mkdir()
+            (tmp / "infra/terraform/azure/main.tf").write_text(
+                'terraform {\n  backend "gcs" {\n    bucket = "no-such-bucket-for-tests"\n  }\n}\n')
+            with mock.patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": str(tmp / "missing.json")}):
+                with self.assertRaisesRegex(cm.Fail, "could not check whether the azure"):
+                    cm.legacy_dns_roots()
 
         def state_list(root):
             p = subprocess.run(["terraform", f"-chdir={tmp / 'infra/terraform' / root}", "state", "list"],
