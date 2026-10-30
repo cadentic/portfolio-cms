@@ -212,8 +212,8 @@ run "gcs_bucket_with_key" {
     error_message = "A gcs site must not get MEDIA_AZURE_ACCOUNT or MEDIA_AZURE_CONTAINER."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 26
-    error_message = "A gcs .env has the 25 default lines plus MEDIA_GCS_BUCKET: 26 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 28
+    error_message = "A gcs .env has the 27 default lines plus MEDIA_GCS_BUCKET: 28 lines."
   }
 }
 
@@ -257,8 +257,8 @@ run "azure_container_with_sas" {
     error_message = "An azure site must not get MEDIA_GCS_BUCKET."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 27
-    error_message = "An azure .env has the 25 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 27 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 29
+    error_message = "An azure .env has the 27 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 29 lines."
   }
 }
 
