@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Brand } from '../core/brand';
 import { Page } from '../core/models';
 import { PublicApi } from '../core/public-api.service';
 import { Seo } from '../core/seo.service';
@@ -32,9 +33,9 @@ const PAGE_SIZE = 12;
             <li>
               <article class="article-card">
                 @if (a.featured_image_url || a.hero.type === 'image') {
-                  <img [src]="a.featured_image_url || a.hero.url" alt="" loading="lazy" decoding="async" width="640" height="360" />
+                  <img [src]="a.featured_image_url || a.hero.url" [alt]="brand.alt(a.title)" loading="lazy" decoding="async" width="640" height="360" />
                 } @else if (a.hero.type === 'youtube' && a.hero.youtube_id) {
-                  <img [src]="'https://i.ytimg.com/vi/' + a.hero.youtube_id + '/hqdefault.jpg'" alt="" loading="lazy" width="640" height="360" />
+                  <img [src]="'https://i.ytimg.com/vi/' + a.hero.youtube_id + '/hqdefault.jpg'" [alt]="brand.alt(a.title)" loading="lazy" width="640" height="360" />
                 }
                 <div class="body">
                   <div class="date"><time [attr.datetime]="a.published_at">{{ a.published_at | date: 'mediumDate' }}</time> · {{ a.reading_minutes }} min read</div>
@@ -58,6 +59,7 @@ export class BlogListComponent {
   private api = inject(PublicApi);
   private seo = inject(Seo);
   readonly site = inject(SiteContentService);
+  protected brand = inject(Brand);
   readonly pageSize = PAGE_SIZE;
   readonly items = signal<Page[]>([]);
   readonly total = signal(0);

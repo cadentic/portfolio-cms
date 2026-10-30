@@ -65,6 +65,7 @@ export interface SiteConfig {
   privacy_policy_version: string;
   resume_available: boolean;
   verification_ttl_hours: number;
+  brand_suffix?: string;
 }
 
 export interface Paged<T> {

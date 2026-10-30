@@ -202,7 +202,7 @@ func Default() Content {
 			ShowLinks: true,
 		},
 		SEO: SEO{
-			HomeTitle: "Sayantan Chakraborty · Oracle DBA & Database Reliability Engineer",
+			HomeTitle: "Oracle DBA & Database Reliability Engineer in Bangalore",
 			HomeDescription: "Oracle Database Administrator and Database Reliability Engineer in Bangalore with {years}+ years of RAC, " +
 				"Data Guard, GoldenGate, RMAN and Oracle EBS experience. Portfolio, articles and videos.",
 			VideosTitle:       "Videos: Oracle DBA walkthroughs",

@@ -42,6 +42,7 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 
 func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 	es, _ := s.Settings.Email(r.Context())
+	si, _ := s.Settings.Site(r.Context())
 	var articles int
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM cms_pages WHERE kind='article' AND status='published'`).Scan(&articles)
 	resume, _, err := s.resumeSource(r.Context())
@@ -61,6 +62,7 @@ func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 		"privacy_policy_version": es.PrivacyPolicyVersion,
 		"resume_available":       resume != "none",
 		"verification_ttl_hours": es.VerificationTTLHours,
+		"brand_suffix":           si.BrandSuffix,
 	})
 }
 

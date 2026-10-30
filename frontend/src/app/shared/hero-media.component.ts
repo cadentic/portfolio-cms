@@ -1,4 +1,5 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { Brand } from '../core/brand';
 import { Hero } from '../core/models';
 import { YoutubeComponent } from './youtube.component';
 
@@ -11,7 +12,7 @@ import { YoutubeComponent } from './youtube.component';
       @case ('image') {
         @if (hero().url) {
           <figure class="hero-media">
-            <img [src]="hero().url" [alt]="hero().alt || ''" fetchpriority="high" decoding="async" />
+            <img [src]="hero().url" [alt]="brand.alt(hero().alt || title())" fetchpriority="high" decoding="async" />
             @if (hero().caption) { <figcaption>{{ hero().caption }}</figcaption> }
           </figure>
         }
@@ -33,4 +34,5 @@ import { YoutubeComponent } from './youtube.component';
 export class HeroMediaComponent {
   readonly hero = input.required<Hero>();
   readonly title = input('');
+  protected brand = inject(Brand);
 }

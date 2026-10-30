@@ -1,6 +1,8 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
+import { Brand, withBrand } from './brand';
+import { PublicApi } from './public-api.service';
 import { profileLinks } from './site-content';
 import { SiteContentService } from './site-content.service';
 import { SITE_URL } from './tokens';
@@ -19,14 +21,25 @@ export interface SeoInput {
   jsonLd?: object[];
 }
 
-/** Sets title, description, canonical, Open Graph, Twitter and JSON-LD for SSR. */
+/**
+ * Sets title, description, canonical, Open Graph, Twitter and JSON-LD for SSR.
+ * Every title, description and image alt ends with the owner's brand suffix
+ * (Admin › SEO & branding), applied here so page and CMS text never repeat it.
+ */
 @Injectable({ providedIn: 'root' })
 export class Seo {
   private title = inject(Title);
   private meta = inject(Meta);
   private doc = inject(DOCUMENT);
   private site = inject(SiteContentService);
+  private brand = inject(Brand);
+  private last?: SeoInput;
   readonly siteUrl = inject(SITE_URL).replace(/\/$/, '');
+
+  constructor() {
+    // Re-apply once the saved suffix arrives (the default is used until then).
+    inject(PublicApi).site().subscribe(() => this.last && this.set(this.last));
+  }
 
   abs(path: string): string {
     if (!path) return this.siteUrl;
@@ -35,11 +48,15 @@ export class Seo {
   }
 
   set(s: SeoInput): void {
+    this.last = s;
     const id = this.site.content().identity;
-    const fullTitle = !id.name || s.title.includes(id.name) ? s.title : `${s.title} · ${id.name}`;
+    const suffix = this.brand.suffix();
+    const fullTitle = suffix ? withBrand(s.title, suffix)
+      : !id.name || s.title.includes(id.name) ? s.title : `${s.title} · ${id.name}`;
     const url = this.abs(s.canonical || s.path);
     const image = this.abs(s.image || id.photo_url);
-    const description = s.description.slice(0, 300);
+    const description = withBrand(s.description, suffix, ' · ', 300);
+    const imageAlt = this.brand.alt(s.title);
     this.title.setTitle(fullTitle);
     const tags: Array<[string, string, string]> = [
       ['name', 'description', description],
@@ -50,12 +67,13 @@ export class Seo {
       ['property', 'og:description', description],
       ['property', 'og:url', url],
       ['property', 'og:image', image],
-      ['property', 'og:image:alt', s.title],
+      ['property', 'og:image:alt', imageAlt],
       ['property', 'og:locale', 'en_IN'],
       ['name', 'twitter:card', s.image ? 'summary_large_image' : 'summary'],
       ['name', 'twitter:title', fullTitle],
       ['name', 'twitter:description', description],
       ['name', 'twitter:image', image],
+      ['name', 'twitter:image:alt', imageAlt],
     ];
     for (const [attr, key, content] of tags) {
       this.meta.updateTag({ [attr]: key, content } as never, `${attr}="${key}"`);

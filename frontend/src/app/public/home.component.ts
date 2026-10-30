@@ -3,6 +3,7 @@ import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, map, of } from 'rxjs';
+import { Brand } from '../core/brand';
 import { PublicApi } from '../core/public-api.service';
 import { Seo } from '../core/seo.service';
 import { profileLinks, sectionNumbers } from '../core/site-content';
@@ -40,7 +41,7 @@ import { YoutubeComponent } from '../shared/youtube.component';
         </div>
         <aside class="hero-panel" aria-label="Professional snapshot">
           <div class="hero-photo">
-            <img [src]="c.identity.photo_url" width="104" height="104" [alt]="'Portrait of ' + c.identity.name" fetchpriority="high" />
+            <img [src]="c.identity.photo_url" width="104" height="104" [alt]="brand.alt('Portrait of ' + c.identity.name)" fetchpriority="high" />
             <div><strong>{{ c.identity.name }}</strong><span>{{ c.identity.short_role }}</span></div>
           </div>
           @for (m of h.metrics; track $index) {
@@ -255,6 +256,7 @@ export class HomeComponent {
   private api = inject(PublicApi);
   private seo = inject(Seo);
   readonly resumeAvailable = toSignal(this.api.site().pipe(map((c) => c.resume_available)), { initialValue: false });
+  protected brand = inject(Brand);
   private articles = toSignal(this.api.articles(12).pipe(map((r) => r.items), catchError(() => of([]))), { initialValue: [] });
   readonly latest = () => this.articles()[0];
   readonly numbers = computed(() => sectionNumbers(this.site.content(), !!this.latest()));
