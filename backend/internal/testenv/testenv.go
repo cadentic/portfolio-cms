@@ -168,7 +168,8 @@ func New(t *testing.T) *Env {
 	alertSvc := &alerts.Service{DB: db, Log: log}
 
 	cfg := &config.Config{Env: "test", PublicSiteURL: SiteURL, CORSOrigins: []string{SiteURL}, AppSecret: signer.Key,
-		FirebaseProjectID: ProjectID, FirebaseEmulatorHost: "emulator", AdminEmails: []string{AdminEmail}, BlogEnabled: true}
+		FirebaseProjectID: ProjectID, FirebaseEmulatorHost: "emulator", AdminEmails: []string{AdminEmail}, BlogEnabled: true,
+		GoogleContactsEnabled: true}
 	verifier := &auth.FirebaseVerifier{ProjectID: ProjectID, Emulator: true, Client: client}
 	authz := auth.Authorizer{Emails: []string{AdminEmail}}
 	srv := &api.Server{

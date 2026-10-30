@@ -151,6 +151,25 @@ class MainTest(unittest.TestCase):
         with self.assertRaisesRegex(setup.Fail, "under it"):
             self.run_main(*VPS_FLAGS, "--site-host", "profile.example.com")
 
+    def test_google_contacts_on_and_off(self):
+        code, out = self.run_main(*VPS_FLAGS)
+        self.assertEqual(code, 0, out)
+        self.assertIs(self.cfg()["google_contacts_enabled"], False)  # off by default
+        with self.assertRaisesRegex(setup.Fail, "--google-oauth-client-id.*--google-oauth-client-secret"):
+            self.run_main("--target", "vps", "--google-contacts")
+        code, out = self.run_main("--target", "vps", "--google-contacts", "--google-oauth-client-id",
+                                  "123.apps.googleusercontent.com", "--google-oauth-client-secret", "GOCSPX-dummy")
+        self.assertEqual(code, 0, out)
+        cfg = self.cfg()
+        self.assertIs(cfg["google_contacts_enabled"], True)
+        self.assertEqual(cfg["google_oauth_client_secret"], "GOCSPX-dummy")
+        self.assertNotIn("GOCSPX-dummy", out)
+        self.assertIn("/api/google/oauth/callback", out)
+        code, out = self.run_main("--target", "vps", "--no-google-contacts")
+        self.assertEqual(code, 0, out)
+        self.assertIs(self.cfg()["google_contacts_enabled"], False)
+        self.assertEqual(self.cfg()["google_oauth_client_id"], "123.apps.googleusercontent.com")  # kept for later
+
     def test_deploy_refused_on_windows(self):
         with mock.patch.object(setup.os, "name", "nt"), self.assertRaisesRegex(setup.Fail, "WSL"):
             setup.deploy("vps", True, False)

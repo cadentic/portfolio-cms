@@ -30,7 +30,9 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/public/contact", s.limited("contact_submit", 30, time.Hour, s.contact))
 	mux.HandleFunc("POST /api/public/contact/code", s.contactCode)
 	mux.HandleFunc("POST /api/public/resume/request", s.resumeRequest)
-	mux.HandleFunc("GET "+googlecontacts.CallbackPath, s.limited("google_oauth_callback", 30, time.Hour, s.googleOAuthCallback))
+	if s.googleContactsOn() {
+		mux.HandleFunc("GET "+googlecontacts.CallbackPath, s.limited("google_oauth_callback", 30, time.Hour, s.googleOAuthCallback))
+	}
 	mux.HandleFunc("POST /api/public/resume/verify", s.limited("resume_verify", 20, time.Hour, s.resumeVerify))
 	mux.HandleFunc("GET /api/public/resume/download", s.resumeDownload)
 

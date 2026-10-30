@@ -16,6 +16,10 @@ unless a flag changes them.
     # see what would change without writing anything
     python3 installSetup.py --site-host profile.cadentic.dev --dry-run
 
+    # turn the optional Google Contacts list on (asks for the OAuth client), or off again
+    python3 installSetup.py --google-contacts
+    python3 installSetup.py --no-google-contacts
+
 The secrets file is written with mode 0600; the previous one is kept next to
 it as secret.backup-<time>.tfvars (both are git-ignored). The deploy runs
 infra/ansible/deploy.yml, so it needs Linux or WSL (on Windows 11: run it in
@@ -87,6 +91,8 @@ SETTINGS = [
     Setting("vps_db_password", "Password for the server's Postgres container", secret=True),
     Setting("media_gcs_bucket", "Google Cloud Storage bucket for media (globally unique)"),
     Setting("media_azure_account", "Azure storage account for media (3-24 lowercase letters/digits)"),
+    Setting("google_oauth_client_id", "Google OAuth web client id (...apps.googleusercontent.com)"),
+    Setting("google_oauth_client_secret", "Google OAuth client secret", secret=True),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
 
@@ -316,6 +322,8 @@ def required_keys(target: str, cfg: dict) -> list[str]:
         keys.append("media_gcs_bucket")
     if media == "azure":
         keys.append("media_azure_account")
+    if cfg.get("google_contacts_enabled") is True:
+        keys += ["google_oauth_client_id", "google_oauth_client_secret"]
     return keys
 
 
@@ -351,7 +359,7 @@ def build_changes(args, cfg: dict, example: dict, ask: Asker) -> tuple[str, dict
         lowered = value.lower()
         put(key, True if lowered == "true" else False if lowered == "false" else
             int(value) if re.match(r"^-?[0-9]+$", value) else value)
-    for key in ("vps_local_db", "media_access_key"):
+    for key in ("vps_local_db", "media_access_key", "google_contacts_enabled"):
         if getattr(args, key) is not None:
             put(key, getattr(args, key))
     if args.media_storage:
@@ -457,6 +465,10 @@ def next_steps(target: str, cfg: dict) -> list[str]:
     if host != domain:
         steps.append(f"Only the site records move to {host}. Anything already on {domain} itself (another site, "
                      "a redirect) is not touched by Terraform.")
+    if cfg.get("google_contacts_enabled") is True:
+        steps.append(f"Google Contacts list is on: in Google Cloud enable the People API, publish the OAuth consent "
+                     f"screen (In production), and add https://{host}/api/google/oauth/callback as a redirect URI "
+                     "on the OAuth client (docs/google-contacts.md).")
     if target == "gcp":
         steps.append(f"Cloud Run domain mapping: verify {domain} in Google Search Console with the account that "
                      "deploys (it covers subdomains).")
@@ -484,6 +496,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--media-storage", choices=MEDIA, help="where uploads live: local (VPS only), gcs or azure")
     p.add_argument("--media-access-key", dest="media_access_key", action=argparse.BooleanOptionalAction,
                    help="key limited to the media bucket, for a site outside the bucket's cloud")
+    p.add_argument("--google-contacts", dest="google_contacts_enabled", action=argparse.BooleanOptionalAction,
+                   help="turn the optional Google Contacts list on or off (off by default; on asks for the "
+                        "Google OAuth client id and secret)")
     p.add_argument("--set", action="append", metavar="KEY=VALUE", help="any other secret.tfvars setting (repeatable)")
     p.add_argument("--tfvars", type=Path, default=TF_DIR / "secret.tfvars", help="file to write")
     p.add_argument("--non-interactive", action="store_true", help="never ask; fail if a setting is missing")

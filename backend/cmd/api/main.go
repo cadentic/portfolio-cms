@@ -166,14 +166,16 @@ func run(log *slog.Logger) error {
 					return err
 				}),
 				every(10*time.Minute, func(ctx context.Context) error { return ratelimit.Cleanup(ctx, db) }),
-				// Syncs the Google Contacts label when due (every 6 hours).
-				every(5*time.Minute, gcontacts.RunDue),
 				every(6*time.Hour, func(ctx context.Context) error {
 					n, err := retention.Purge(ctx, db)
 					log.Info("retention purge", "rows", n)
 					return err
 				}),
 			},
+		}
+		if cfg.GoogleContactsEnabled {
+			// Syncs the Google Contacts label when due (every 6 hours).
+			w.Hooks = append(w.Hooks, every(5*time.Minute, gcontacts.RunDue))
 		}
 		wg.Add(1)
 		go func() { defer wg.Done(); w.Run(ctx) }()

@@ -276,3 +276,28 @@ func TestGoogleContactsSync(t *testing.T) {
 		t.Fatal("disconnect kept the token")
 	}
 }
+
+// With GOOGLE_CONTACTS_ENABLED off, only the status call answers (so the
+// admin can hide the tab); every other endpoint, and the callback, is absent.
+func TestGoogleContactsDisabled(t *testing.T) {
+	e := testenv.New(t)
+	e.Server.Cfg.GoogleContactsEnabled = false
+	off := httptest.NewServer(e.Server.Routes())
+	t.Cleanup(off.Close)
+	e.API = off
+
+	if r := e.Admin("GET", "/api/admin/google-contacts", nil); r.Status != 200 || string(r.Body) != "{\"enabled\":false}\n" {
+		t.Fatalf("status when off: %d %s", r.Status, r.Body)
+	}
+	for _, p := range []string{"connect", "sync", "preview", "disconnect"} {
+		if r := e.Admin("POST", "/api/admin/google-contacts/"+p, map[string]any{}); r.Status != 404 {
+			t.Fatalf("%s when off: %d", p, r.Status)
+		}
+	}
+	if r := e.Do("GET", googlecontacts.CallbackPath+"?code=x&state=y", nil, nil); r.Status == http.StatusSeeOther {
+		t.Fatal("callback answered when off")
+	}
+	if r := e.Admin("GET", "/api/admin/google-contacts", nil); strings.Contains(string(r.Body), "configured") {
+		t.Fatal("status leaked details when off")
+	}
+}

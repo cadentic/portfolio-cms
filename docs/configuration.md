@@ -35,7 +35,8 @@ is edited in the console under Subscribers & Email → Settings and Providers.
 | `MEDIA_GCS_CREDENTIALS` | | | Service-account key JSON (one line), for hosts outside Google Cloud. Empty uses the Cloud Run service account via the metadata server |
 | `MEDIA_AZURE_ACCOUNT`, `MEDIA_AZURE_CONTAINER` | for `azure` | | Storage account and container. The account may live in another subscription |
 | `MEDIA_AZURE_SAS` | | | Container SAS token without the leading `?`, for hosts outside Azure. Empty uses the managed identity (`IDENTITY_ENDPOINT`, `IDENTITY_HEADER`, and `AZURE_CLIENT_ID` for a user-assigned identity) |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | for Google Contacts | | OAuth web client for the Google Contacts list. Empty turns the feature off. Setup: [google-contacts.md](google-contacts.md) |
+| `GOOGLE_CONTACTS_ENABLED` | | `false` | Turns on the optional Google Contacts list (admin tab, API, worker sync). Terraform: `google_contacts_enabled`; `installSetup.py --google-contacts` |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | when `GOOGLE_CONTACTS_ENABLED=true` | | OAuth web client for the Google Contacts list. Setup: [google-contacts.md](google-contacts.md) |
 | `GTM_ID`, `GA4_MEASUREMENT_ID` | | | Analytics, loaded only after visitor consent |
 | `BLOG_ENABLED` | | `true` | Hide the blog section |
 | `TRUST_CLIENT_IP_HEADER` | | `false` | Take the visitor IP from `X-Client-IP` set by the web server. Only when the API is reachable solely through it |

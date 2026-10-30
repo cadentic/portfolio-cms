@@ -74,6 +74,9 @@ Edit `infra/terraform/secret.tfvars` (it is git-ignored) and set at least:
 - `media_storage` (`gcs` or `azure`) and the bucket name, `media_gcs_bucket` or
   `media_azure_account`. A site outside the bucket's cloud (a VPS, or Azure with a Google bucket)
   also needs `media_access_key = true`.
+- Optional: `google_contacts_enabled = true` with `google_oauth_client_id` and
+  `google_oauth_client_secret` turns on the Google Contacts list (off by default; or run
+  `python3 installSetup.py --google-contacts`). See [docs/google-contacts.md](docs/google-contacts.md).
 
 Before the first real deploy, also turn on the Terraform remote state `backend` block in each
 root you use (`infra/terraform/<gcp|azure|vps>/`, `dns/`, `media-gcs/` or `media-azure/`),

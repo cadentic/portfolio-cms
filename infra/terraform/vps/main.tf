@@ -95,8 +95,9 @@ locals {
     EMAIL_MAILJET_WEBHOOK_SECRET = var.email_mailjet_webhook_secret
     GTM_ID                       = var.gtm_id
     GA4_MEASUREMENT_ID           = var.ga4_measurement_id
-    GOOGLE_OAUTH_CLIENT_ID       = var.google_oauth_client_id
-    GOOGLE_OAUTH_CLIENT_SECRET   = var.google_oauth_client_secret
+    GOOGLE_CONTACTS_ENABLED      = var.google_contacts_enabled ? "true" : "false"
+    GOOGLE_OAUTH_CLIENT_ID       = var.google_contacts_enabled ? var.google_oauth_client_id : ""
+    GOOGLE_OAUTH_CLIENT_SECRET   = var.google_contacts_enabled ? var.google_oauth_client_secret : ""
     # A bucket outside the server is reached with a key limited to it.
     MEDIA_GCS_CREDENTIALS = var.media_storage == "gcs" ? var.media_gcs_credentials : ""
     MEDIA_AZURE_SAS       = var.media_storage == "azure" ? var.media_azure_sas : ""
