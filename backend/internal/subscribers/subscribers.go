@@ -31,6 +31,11 @@ var (
 	ErrNotFound       = errors.New("subscriber not found")
 )
 
+// GoogleContactsSource marks subscribers synced from Google Contacts. They form
+// a separate list that the regular newsletter leaves out (package campaigns);
+// confirming a sign-up on the site moves them onto the regular list.
+const GoogleContactsSource = "google_contacts"
+
 type Service struct {
 	DB       *pgxpool.Pool
 	Settings *settings.Store
@@ -129,11 +134,11 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) error {
 	source := allowedSource(in.Source)
 
 	return store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
-		var id, status string
+		var id, status, existingSource string
 		var lastSent *time.Time
 		var sendCount int
-		err := tx.QueryRow(ctx, `SELECT id, status, last_verification_sent_at, verification_send_count
-			FROM subscribers WHERE email=$1 FOR UPDATE`, addr).Scan(&id, &status, &lastSent, &sendCount)
+		err := tx.QueryRow(ctx, `SELECT id, status, source, last_verification_sent_at, verification_send_count
+			FROM subscribers WHERE email=$1 FOR UPDATE`, addr).Scan(&id, &status, &existingSource, &lastSent, &sendCount)
 		isNew := errors.Is(err, pgx.ErrNoRows)
 		if err != nil && !isNew {
 			return err
@@ -150,8 +155,11 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) error {
 		}
 		cooldownOK := lastSent == nil || time.Since(*lastSent) >= time.Duration(es.ResendCooldownMinutes)*time.Minute
 
-		switch status {
-		case "verified":
+		switch {
+		case status == "verified" && existingSource == GoogleContactsSource:
+			// Synced from the owner's Google Contacts: they join the regular
+			// newsletter only by confirming this sign-up (handled below).
+		case status == "verified":
 			if !cooldownOK {
 				return nil
 			}
@@ -163,7 +171,7 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) error {
 				IdempotencyKey: "already:" + id + ":" + strconv.FormatInt(time.Now().Unix()/3600, 10),
 				Vars:           map[string]string{"unsubscribe_url": s.UnsubscribeURL(id)}})
 			return err
-		case "bounced":
+		case status == "bounced":
 			return nil // address cannot receive mail; nothing useful to send
 		}
 
@@ -199,7 +207,8 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) error {
 		if lastSent != nil && time.Since(*lastSent) >= 24*time.Hour {
 			resetCount = ", verification_send_count=0"
 		}
-		if _, err := tx.Exec(ctx, `UPDATE subscribers SET status='pending', updated_at=now()`+resetCount+` WHERE id=$1`, id); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE subscribers SET status=CASE WHEN status='verified' THEN status ELSE 'pending' END,
+			updated_at=now()`+resetCount+` WHERE id=$1`, id); err != nil {
 			return err
 		}
 		return s.sendConfirmation(ctx, tx, id, addr, name, es)
@@ -306,7 +315,7 @@ func (s *Service) Confirm(ctx context.Context, raw, ip, ua string) (*ConfirmResu
 
 func (s *Service) markVerified(ctx context.Context, tx pgx.Tx, id, addr, name, ip, ua, method string) error {
 	if _, err := tx.Exec(ctx, `UPDATE subscribers SET status='verified', verified_at=now(), unsubscribed_at=NULL,
-		updated_at=now() WHERE id=$1`, id); err != nil {
+		source=CASE WHEN source=$2 THEN 'website' ELSE source END, updated_at=now() WHERE id=$1`, id, GoogleContactsSource); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO subscriber_consents (subscriber_id, action, source, ip, user_agent, evidence)

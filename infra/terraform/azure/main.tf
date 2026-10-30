@@ -72,6 +72,7 @@ locals {
     # A Google bucket is reached with a key limited to it; an Azure container
     # with the API's managed identity (below), so no key.
     var.media_storage == "gcs" ? { "media-gcs-credentials" = var.media_gcs_credentials } : {},
+    var.google_oauth_client_secret != "" ? { "google-oauth-client-secret" = var.google_oauth_client_secret } : {},
   )
   api_env = merge(local.media_env, {
     APP_ENV                = "production"
@@ -85,6 +86,7 @@ locals {
     EMAIL_FROM_ADDRESS     = var.email_from_address
     GTM_ID                 = var.gtm_id
     GA4_MEASUREMENT_ID     = var.ga4_measurement_id
+    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
     # Which managed identity the Azure SDK uses (the API's, below).
     AZURE_CLIENT_ID = azurerm_user_assigned_identity.api.client_id
   })

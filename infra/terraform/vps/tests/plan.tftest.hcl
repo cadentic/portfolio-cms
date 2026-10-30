@@ -62,6 +62,8 @@ run "neon_database_and_local_media" {
       FIREBASE_AUTH_DOMAIN=''
       FIREBASE_PROJECT_ID='dummy-firebase-project'
       GA4_MEASUREMENT_ID=''
+      GOOGLE_OAUTH_CLIENT_ID=''
+      GOOGLE_OAUTH_CLIENT_SECRET=''
       GTM_ID=''
       MEDIA_AZURE_SAS=''
       MEDIA_GCS_CREDENTIALS=''
@@ -71,7 +73,7 @@ run "neon_database_and_local_media" {
       SITE_ADDRESSES='portfolio.example.com www.portfolio.example.com'
       SITE_HOSTS='portfolio.example.com,www.portfolio.example.com'
     EOT
-    error_message = "The default .env (Neon database, local media) does not match the expected 25 lines."
+    error_message = "The default .env (Neon database, local media) does not match the expected 27 lines."
   }
   assert {
     condition     = !strcontains(nonsensitive(output.env_file), "MEDIA_LOCAL_DIR")
@@ -210,8 +212,8 @@ run "gcs_bucket_with_key" {
     error_message = "A gcs site must not get MEDIA_AZURE_ACCOUNT or MEDIA_AZURE_CONTAINER."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 26
-    error_message = "A gcs .env has the 25 default lines plus MEDIA_GCS_BUCKET: 26 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 28
+    error_message = "A gcs .env has the 27 default lines plus MEDIA_GCS_BUCKET: 28 lines."
   }
 }
 
@@ -255,8 +257,8 @@ run "azure_container_with_sas" {
     error_message = "An azure site must not get MEDIA_GCS_BUCKET."
   }
   assert {
-    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 27
-    error_message = "An azure .env has the 25 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 27 lines."
+    condition     = length(regexall("\n", nonsensitive(output.env_file))) == 29
+    error_message = "An azure .env has the 27 default lines plus MEDIA_AZURE_ACCOUNT and MEDIA_AZURE_CONTAINER: 29 lines."
   }
 }
 

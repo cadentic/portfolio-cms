@@ -17,6 +17,7 @@ lives. Last reviewed 2026-10-29.
 | IP spoofing (rate-limit bypass) | The web tier removes any client `X-Client-IP` and sets its own. The API trusts that header only when it cannot be reached directly (Cloud Run IAM, internal ingress, compose network). | `server.ts`, `api/server.go` |
 | Secrets in logs | Query strings (which carry tokens) are not logged. Error text is redacted, and request ids are limited to safe characters. | `api/server.go`, `email/redact.go` |
 | Host header / SSRF | Angular SSR only answers for `NG_ALLOWED_HOSTS`. The API makes no outbound requests to user-supplied URLs. Provider base-URL overrides are refused in production. | infra, `config/config.go` |
+| Third-party account tokens | The Google Contacts refresh token is encrypted with AES-256-GCM (key derived from `APP_SECRET`) and never returned by the API. The sign-in uses PKCE and a single-use, hashed, 10-minute `state` that only an admin can create; the scope is read-only contacts. | `googlecontacts/googlecontacts.go` |
 | Dependencies | Go modules and npm packages are checked with `govulncheck` and `npm audit --omit=dev`. | `backend/go.mod`, `frontend/package.json` |
 
 ## Checking for vulnerable dependencies

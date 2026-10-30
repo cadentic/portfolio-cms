@@ -118,3 +118,4 @@ delivery stats. It cannot send email or see subscriber addresses.
 - [docs/deploy.md](docs/deploy.md): cloud and VPS setup, the media bucket and its permissions, DNS, email authentication (SPF, DKIM, DMARC), webhooks
 - [docs/operations.md](docs/operations.md): how delivery and failover work, alerts, replaying dead letters, resolving unknown acceptance, data retention
 - [docs/configuration.md](docs/configuration.md): every environment variable
+- [docs/google-contacts.md](docs/google-contacts.md): the separate Google Contacts list, and the Google Cloud setup it needs

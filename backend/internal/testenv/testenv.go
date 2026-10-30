@@ -37,6 +37,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/email"
 	"github.com/cadentic/portfolio-cms/backend/internal/email/brevo"
 	"github.com/cadentic/portfolio-cms/backend/internal/email/mailjet"
+	"github.com/cadentic/portfolio-cms/backend/internal/googlecontacts"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
 	"github.com/cadentic/portfolio-cms/backend/internal/media"
@@ -174,7 +175,8 @@ func New(t *testing.T) *Env {
 		Cfg: cfg, DB: db, Log: log, Verifier: verifier, Authorizer: authz, Settings: sets, Providers: provs,
 		Registry: registry, Subscribers: subs, Campaigns: camps, Content: cms, Mailer: mail, Alerts: alertSvc,
 		Limiter: &ratelimit.Limiter{DB: db}, Signer: signer, SiteContent: site,
-		OAuth: &oauth.Server{DB: db, Issuer: SiteURL, SiteURL: SiteURL, Authorizer: authz},
+		GoogleContacts: &googlecontacts.Service{DB: db, Client: client, SiteURL: SiteURL, AppSecret: signer.Key, Log: log},
+		OAuth:          &oauth.Server{DB: db, Issuer: SiteURL, SiteURL: SiteURL, Authorizer: authz},
 		MCP: &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, SiteContent: site, Log: log,
 			SiteURL: SiteURL},
 	}

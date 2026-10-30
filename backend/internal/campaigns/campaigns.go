@@ -227,6 +227,10 @@ func segmentSQL(seg Segment, approvedBefore *time.Time) (string, []any) {
 	}
 	if len(seg.Sources) > 0 {
 		add("e.source = ANY(?)", seg.Sources)
+	} else if len(seg.SubscriberIDs) == 0 {
+		// The Google Contacts list is separate: it is only mailed when a
+		// campaign names it in Sources (or picks its people explicitly).
+		add("e.source <> ?", subscribers.GoogleContactsSource)
 	}
 	if seg.SubscribedFrom != nil {
 		add("e.created_at >= ?", *seg.SubscribedFrom)

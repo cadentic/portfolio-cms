@@ -26,6 +26,7 @@ export const ADMIN_ROUTES: Routes = [
           { path: 'providers', loadComponent: () => import('./email/providers.component').then((m) => m.ProvidersComponent) },
           { path: 'settings', loadComponent: () => import('./email/settings.component').then((m) => m.EmailSettingsComponent) },
           { path: 'monitor', loadComponent: () => import('./email/monitor.component').then((m) => m.MonitorComponent) },
+          { path: 'google-contacts', loadComponent: () => import('./email/google-contacts.component').then((m) => m.GoogleContactsComponent) },
           { path: 'suppressions', loadComponent: () => import('./email/suppressions.component').then((m) => m.SuppressionsComponent) },
         ],
       },

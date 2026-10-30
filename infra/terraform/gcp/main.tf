@@ -49,6 +49,7 @@ locals {
     # An Azure container is reached with a SAS token; a Google bucket with the
     # API's own service account (below), so no key.
     var.media_storage == "azure" ? { MEDIA_AZURE_SAS = var.media_azure_sas } : {},
+    var.google_oauth_client_secret != "" ? { GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret } : {},
   )
   api_env = merge(local.media_env, {
     APP_ENV                = "production"
@@ -62,6 +63,7 @@ locals {
     EMAIL_FROM_ADDRESS     = var.email_from_address
     GTM_ID                 = var.gtm_id
     GA4_MEASUREMENT_ID     = var.ga4_measurement_id
+    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
   })
 }
 

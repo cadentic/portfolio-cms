@@ -24,6 +24,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/email/brevo"
 	"github.com/cadentic/portfolio-cms/backend/internal/email/mailjet"
 	"github.com/cadentic/portfolio-cms/backend/internal/email/smtp"
+	"github.com/cadentic/portfolio-cms/backend/internal/googlecontacts"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
 	"github.com/cadentic/portfolio-cms/backend/internal/media"
@@ -131,6 +132,9 @@ func run(log *slog.Logger) error {
 		log.Warn("no ADMIN_UIDS or ADMIN_EMAILS configured: the admin area is locked")
 	}
 
+	gcontacts := &googlecontacts.Service{DB: db, Client: httpClient, ClientID: cfg.GoogleOAuthClientID,
+		ClientSecret: cfg.GoogleOAuthClientSecret, SiteURL: cfg.PublicSiteURL, AppSecret: cfg.AppSecret, Log: log}
+
 	mediaStore, err := media.New(cfg)
 	if err != nil {
 		return err
@@ -143,7 +147,7 @@ func run(log *slog.Logger) error {
 		OAuth: &oauth.Server{DB: db, Issuer: cfg.PublicSiteURL, SiteURL: cfg.PublicSiteURL, Authorizer: authz},
 		MCP: &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, SiteContent: site, Log: log,
 			SiteURL: cfg.PublicSiteURL},
-		Media: mediaStore, SiteContent: site,
+		Media: mediaStore, SiteContent: site, GoogleContacts: gcontacts,
 	}
 
 	var wg sync.WaitGroup
@@ -162,6 +166,8 @@ func run(log *slog.Logger) error {
 					return err
 				}),
 				every(10*time.Minute, func(ctx context.Context) error { return ratelimit.Cleanup(ctx, db) }),
+				// Syncs the Google Contacts label when due (every 6 hours).
+				every(5*time.Minute, gcontacts.RunDue),
 				every(6*time.Hour, func(ctx context.Context) error {
 					n, err := retention.Purge(ctx, db)
 					log.Info("retention purge", "rows", n)

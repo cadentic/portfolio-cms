@@ -152,7 +152,7 @@ var (
 	ytIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 	ytURLRe  = regexp.MustCompile(`(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})(?:[?&#/]|$)`)
 	reserved = map[string]bool{"admin": true, "api": true, "blog": true, "subscribe": true, "unsubscribe": true,
-		"media": true, "assets": true, "sitemap.xml": true, "robots.txt": true, "oauth": true, "mcp": true, "videos": true,
+		"media": true, "assets": true, "sitemap.xml": true, "robots.txt": true, "oauth": true, "mcp": true, "videos": true, "resume": true,
 		"llms.txt": true, "healthz": true, "readyz": true, "metrics": true, "app-config.json": true, "images": true}
 	blockKind = map[string]bool{"heading": true, "paragraph": true, "list": true, "quote": true, "code": true, "callout": true, "divider": true, "html": true}
 )
