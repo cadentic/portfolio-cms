@@ -26,6 +26,6 @@ export class EmailShellComponent {
   readonly googleContacts = signal(false);
 
   constructor() {
-    inject(AdminApi).get<{ enabled: boolean }>('google-contacts').subscribe({ next: (s) => this.googleContacts.set(s.enabled), error: () => {} });
+    inject(AdminApi).get<{ enabled: boolean }>('google-contacts').subscribe({ next: (s) => this.googleContacts.set(s.enabled !== false), error: () => this.googleContacts.set(true) });
   }
 }

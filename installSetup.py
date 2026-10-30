@@ -431,6 +431,10 @@ def build_changes(args, cfg: dict, example: dict, ask: Asker) -> tuple[str, dict
         put("vps_db_password", secrets.token_hex(24))
         notes.append("Generated vps_db_password.")
 
+    if cfg.get("google_contacts_enabled") is not True and not is_missing("google_oauth_client_id", cfg, example):
+        notes.append("Google Contacts list is off (google_contacts_enabled = false) although an OAuth client is set; "
+                     "pass --google-contacts to turn it on.")
+
     return target, changes, notes
 
 

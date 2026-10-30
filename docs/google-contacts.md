@@ -8,8 +8,9 @@
   then deploy; or
 - locally, `GOOGLE_CONTACTS_ENABLED=true` in `.env`, then `docker compose up -d`.
 
-When it is off, the admin hides the Google Contacts tab, its API endpoints and
-the Google callback do not exist, and the worker never syncs. Contacts already
+When it is off, the admin hides the Google Contacts tab, the only endpoint left
+is the status call (`GET /api/admin/google-contacts` answers `{"enabled":false}`),
+the Google callback does not exist, and the worker never syncs. Contacts already
 on the list stay (still out of the regular newsletter), and the stored Google
 connection is kept for when it is turned back on.
 
