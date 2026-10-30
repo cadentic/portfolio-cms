@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/cadentic/portfolio-cms/backend/internal/googlecontacts"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/public/contact", s.limited("contact_submit", 30, time.Hour, s.contact))
 	mux.HandleFunc("POST /api/public/contact/code", s.contactCode)
 	mux.HandleFunc("POST /api/public/resume/request", s.resumeRequest)
+	mux.HandleFunc("GET "+googlecontacts.CallbackPath, s.limited("google_oauth_callback", 30, time.Hour, s.googleOAuthCallback))
 	mux.HandleFunc("POST /api/public/resume/verify", s.limited("resume_verify", 20, time.Hour, s.resumeVerify))
 	mux.HandleFunc("GET /api/public/resume/download", s.resumeDownload)
 
@@ -425,7 +427,7 @@ func (s *Server) targetLive(r *http.Request, to string) bool {
 		return true
 	}
 	p := strings.TrimSuffix(to, "/")
-	if p == "" || p == "/blog" || p == "/privacy" || p == "/terms" || p == "/ai-policy" || p == "/videos" {
+	if p == "" || p == "/blog" || p == "/privacy" || p == "/terms" || p == "/ai-policy" || p == "/videos" || p == "/resume" {
 		return true
 	}
 	if strings.HasPrefix(p, "/blog/") {

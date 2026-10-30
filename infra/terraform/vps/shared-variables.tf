@@ -125,6 +125,19 @@ variable "email_mailjet_webhook_secret" {
   }
 }
 
+# Google Contacts sync (Admin -> Email -> Google Contacts). Leave both empty to
+# turn it off. See docs/google-contacts.md for the Google Cloud setup.
+variable "google_oauth_client_id" {
+  type    = string
+  default = ""
+}
+
+variable "google_oauth_client_secret" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
 variable "gtm_id" {
   type    = string
   default = ""

@@ -9,6 +9,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
     <p>Manage subscribers, create campaigns and configure email providers.</p>
     <nav class="a-tabs" aria-label="Email sections">
       <a routerLink="subscribers" routerLinkActive="active">Subscribers</a>
+      <a routerLink="google-contacts" routerLinkActive="active">Google Contacts</a>
       <a routerLink="campaigns" routerLinkActive="active">Campaigns</a>
       <a routerLink="templates" routerLinkActive="active">Templates</a>
       <a routerLink="providers" routerLinkActive="active">Providers</a>

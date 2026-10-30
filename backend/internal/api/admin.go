@@ -105,6 +105,7 @@ func (s *Server) adminRoutes(m *http.ServeMux) {
 	s.siteContentRoutes(m)
 	s.resumeRoutes(m)
 	s.pageVersionRoutes(m)
+	s.googleContactsRoutes(m)
 
 	m.HandleFunc("GET /api/admin/contact-messages", s.listContactMessages)
 	m.HandleFunc("POST /api/admin/contact-messages/{id}/forward", s.forwardContactMessage)

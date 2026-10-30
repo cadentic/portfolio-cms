@@ -44,7 +44,7 @@ interface ImportPreview { token: string; summary: Record<string, number>; rows: 
             <option value="unsubscribed">Unsubscribed</option><option value="bounced">Bounced</option><option value="complained">Complained</option></select></label>
           <label class="f">Source<select [(ngModel)]="source" (change)="load(1)">
             <option value="">All</option><option value="website">Website</option><option value="blog">Blog</option><option value="import">Import</option>
-            <option value="admin">Added by admin</option><option value="wordpress">WordPress</option></select></label>
+            <option value="admin">Added by admin</option><option value="wordpress">WordPress</option><option value="google_contacts">Google Contacts</option></select></label>
           <label class="f">Subscribed from<input type="date" [(ngModel)]="from" (change)="load(1)" /></label>
           <label class="f">Sort by<select [(ngModel)]="sort" (change)="load(1)">
             <option value="">Newest first</option><option value="oldest">Oldest first</option><option value="email">Email A–Z</option><option value="status">Status</option></select></label>

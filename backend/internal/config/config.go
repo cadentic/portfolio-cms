@@ -56,6 +56,10 @@ type Config struct {
 	AzureIdentityHeader   string
 	AzureClientID         string
 
+	// Google Contacts sync (OAuth web client with the People API enabled).
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+
 	// Provider base URL overrides (local mock server / tests only).
 	BrevoBaseURL   string
 	MailjetBaseURL string
@@ -67,30 +71,32 @@ func (c *Config) IsProduction() bool { return c.Env == "production" }
 
 func Load() (*Config, error) {
 	c := &Config{
-		Env:                  get("APP_ENV", "development"),
-		HTTPAddr:             get("HTTP_ADDR", ":8080"),
-		DatabaseURL:          os.Getenv("DATABASE_URL"),
-		DBMaxConns:           int32(getInt("DB_MAX_CONNS", 10)),
-		PublicSiteURL:        strings.TrimRight(get("PUBLIC_SITE_URL", "http://localhost:4200"), "/"),
-		CORSOrigins:          list(get("CORS_ALLOWED_ORIGINS", "http://localhost:4200")),
-		TrustedProxyHops:     getInt("TRUSTED_PROXY_HOPS", 0),
-		TrustCloudflareIP:    getBool("TRUST_CLOUDFLARE_IP", false),
-		TrustClientIPHeader:  getBool("TRUST_CLIENT_IP_HEADER", false),
-		AppSecret:            []byte(os.Getenv("APP_SECRET")),
-		FirebaseProjectID:    os.Getenv("FIREBASE_PROJECT_ID"),
-		FirebaseEmulatorHost: os.Getenv("FIREBASE_AUTH_EMULATOR_HOST"),
-		AdminUIDs:            list(os.Getenv("ADMIN_UIDS")),
-		AdminEmails:          lower(list(os.Getenv("ADMIN_EMAILS"))),
-		RunWorker:            getBool("RUN_WORKER", true),
-		WorkerID:             get("WORKER_ID", hostname()),
-		ResumeFilePath:       os.Getenv("RESUME_FILE_PATH"),
-		AdminAlertEmail:      os.Getenv("ADMIN_ALERT_EMAIL"),
-		GTMID:                os.Getenv("GTM_ID"),
-		GA4ID:                os.Getenv("GA4_MEASUREMENT_ID"),
-		BlogEnabled:          getBool("BLOG_ENABLED", true),
-		BrevoBaseURL:         os.Getenv("EMAIL_BREVO_BASE_URL"),
-		MailjetBaseURL:       os.Getenv("EMAIL_MAILJET_BASE_URL"),
-		ShutdownTimeout:      time.Duration(getInt("SHUTDOWN_TIMEOUT_SECONDS", 25)) * time.Second,
+		Env:                     get("APP_ENV", "development"),
+		HTTPAddr:                get("HTTP_ADDR", ":8080"),
+		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		DBMaxConns:              int32(getInt("DB_MAX_CONNS", 10)),
+		PublicSiteURL:           strings.TrimRight(get("PUBLIC_SITE_URL", "http://localhost:4200"), "/"),
+		CORSOrigins:             list(get("CORS_ALLOWED_ORIGINS", "http://localhost:4200")),
+		TrustedProxyHops:        getInt("TRUSTED_PROXY_HOPS", 0),
+		TrustCloudflareIP:       getBool("TRUST_CLOUDFLARE_IP", false),
+		TrustClientIPHeader:     getBool("TRUST_CLIENT_IP_HEADER", false),
+		AppSecret:               []byte(os.Getenv("APP_SECRET")),
+		FirebaseProjectID:       os.Getenv("FIREBASE_PROJECT_ID"),
+		FirebaseEmulatorHost:    os.Getenv("FIREBASE_AUTH_EMULATOR_HOST"),
+		AdminUIDs:               list(os.Getenv("ADMIN_UIDS")),
+		AdminEmails:             lower(list(os.Getenv("ADMIN_EMAILS"))),
+		RunWorker:               getBool("RUN_WORKER", true),
+		WorkerID:                get("WORKER_ID", hostname()),
+		ResumeFilePath:          os.Getenv("RESUME_FILE_PATH"),
+		AdminAlertEmail:         os.Getenv("ADMIN_ALERT_EMAIL"),
+		GTMID:                   os.Getenv("GTM_ID"),
+		GA4ID:                   os.Getenv("GA4_MEASUREMENT_ID"),
+		BlogEnabled:             getBool("BLOG_ENABLED", true),
+		BrevoBaseURL:            os.Getenv("EMAIL_BREVO_BASE_URL"),
+		GoogleOAuthClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
+		GoogleOAuthClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
+		MailjetBaseURL:          os.Getenv("EMAIL_MAILJET_BASE_URL"),
+		ShutdownTimeout:         time.Duration(getInt("SHUTDOWN_TIMEOUT_SECONDS", 25)) * time.Second,
 
 		MediaStorage:          strings.ToLower(get("MEDIA_STORAGE", "local")),
 		MediaLocalDir:         get("MEDIA_LOCAL_DIR", "/data/media"),

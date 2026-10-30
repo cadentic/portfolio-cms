@@ -62,6 +62,8 @@ run "neon_database_and_local_media" {
       FIREBASE_AUTH_DOMAIN=''
       FIREBASE_PROJECT_ID='dummy-firebase-project'
       GA4_MEASUREMENT_ID=''
+      GOOGLE_OAUTH_CLIENT_ID=''
+      GOOGLE_OAUTH_CLIENT_SECRET=''
       GTM_ID=''
       MEDIA_AZURE_SAS=''
       MEDIA_GCS_CREDENTIALS=''
@@ -71,7 +73,7 @@ run "neon_database_and_local_media" {
       SITE_ADDRESSES='portfolio.example.com www.portfolio.example.com'
       SITE_HOSTS='portfolio.example.com,www.portfolio.example.com'
     EOT
-    error_message = "The default .env (Neon database, local media) does not match the expected 25 lines."
+    error_message = "The default .env (Neon database, local media) does not match the expected 27 lines."
   }
   assert {
     condition     = !strcontains(nonsensitive(output.env_file), "MEDIA_LOCAL_DIR")

@@ -25,6 +25,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/config"
 	"github.com/cadentic/portfolio-cms/backend/internal/content"
 	"github.com/cadentic/portfolio-cms/backend/internal/email"
+	"github.com/cadentic/portfolio-cms/backend/internal/googlecontacts"
 	"github.com/cadentic/portfolio-cms/backend/internal/mailer"
 	"github.com/cadentic/portfolio-cms/backend/internal/mcp"
 	"github.com/cadentic/portfolio-cms/backend/internal/media"
@@ -57,6 +58,8 @@ type Server struct {
 	MCP         *mcp.Server
 	Media       media.Storage
 	SiteContent *sitecontent.Service
+	// GoogleContacts syncs one Google Contacts label into its own subscriber list.
+	GoogleContacts *googlecontacts.Service
 }
 
 func (s *Server) Routes() http.Handler {

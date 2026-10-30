@@ -29,7 +29,7 @@ interface Audience { count: number; audience_hash: string; sample: string[] }
             <textarea class="code" name="html" rows="14" [(ngModel)]="c.content_html"></textarea></label>
           <div class="two">
             <label class="f">Audience: topics (comma separated, empty = everyone)<input name="topics" [(ngModel)]="topics" placeholder="articles, videos" /></label>
-            <label class="f">Audience: sources (comma separated, empty = all)<input name="sources" [(ngModel)]="sources" placeholder="website, blog" /></label>
+            <label class="f">Audience: sources (comma separated, empty = all except the Google Contacts list; enter google_contacts to mail that list)<input name="sources" [(ngModel)]="sources" placeholder="website, blog" /></label>
           </div>
         </fieldset>
         <div class="a-row">
