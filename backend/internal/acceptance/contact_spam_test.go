@@ -207,3 +207,23 @@ func TestContactAckLinksResumePage(t *testing.T) {
 		t.Fatalf("owner alerts = %d", n)
 	}
 }
+
+// The seeded list blocks bug-bounty begging, prize-money scams and SEO pitches.
+func TestContactScamPhrases(t *testing.T) {
+	e := testenv.New(t)
+	for i, msg := range []string{
+		"Hello, I am an ethical hacker and found a vulnerability. What is your bug bounty reward?",
+		"Congratulations, you have won the lottery! Send your bank details to claim your prize.",
+		"We offer affordable SEO services to get your site on the first page of Google.",
+		"Hi, can I write a guest post for your blog? We also do link building.",
+	} {
+		addr := testenv.Sprint("scam", i, "@example.com")
+		if r := e.Do("POST", "/api/public/contact", map[string]string{
+			"name": "Scam", "email": addr, "message": msg, "code": contactCode(e, addr)}, nil); r.Status != 422 {
+			t.Fatalf("scam message %d = %d %s, want 422", i, r.Status, r.Body)
+		}
+	}
+	if n := e.Count(`SELECT count(*) FROM contact_messages`); n != 0 {
+		t.Fatalf("contact_messages = %d, want 0", n)
+	}
+}
