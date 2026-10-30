@@ -258,7 +258,7 @@ and creates the new ones; on Azure the new hostname is added to the app after
 DNS points at it. Then update the Firebase authorized domain and the Brevo and
 Mailjet webhook URLs, and add the MCP connector in Claude again with the new
 URL (the OAuth issuer is the site URL). Imported WordPress pages use site-relative canonical URLs
-(migration 0006), so they follow the hostname too.
+(migration 0009), so they follow the hostname too.
 
 ## Email authentication
 
