@@ -1,5 +1,6 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
+import { SiteContentService } from '../core/site-content.service';
 
 /**
  * Click-to-load YouTube embed: no third-party requests or cookies until the
@@ -21,10 +22,15 @@ import { DomSanitizer } from '@angular/platform-browser';
         }
       </div>
     } @else {
+      @let v = site.content().videos;
+      @let channel = site.content().identity.youtube_url;
       <div class="yt-placeholder">
         <div>
-          <strong>Video coming soon</strong>
-          <p>Watch the latest Oracle DBA walkthroughs on <a href="https://www.youtube.com/@csayantan" target="_blank" rel="noopener">YouTube &#64;csayantan</a>.</p>
+          @if (v.placeholder_title) { <strong>{{ v.placeholder_title }}</strong> }
+          @if (v.placeholder_text) { <p>{{ v.placeholder_text }}</p> }
+          @if (channel && v.page_cta_label) {
+            <a [href]="channel" target="_blank" rel="noopener" style="text-decoration:underline">{{ v.page_cta_label }} ↗</a>
+          }
         </div>
       </div>
     }
@@ -35,6 +41,7 @@ export class YoutubeComponent {
   readonly title = input('Video');
   readonly playing = signal(false);
   private sanitizer = inject(DomSanitizer);
+  readonly site = inject(SiteContentService);
   readonly thumb = computed(() => `https://i.ytimg.com/vi/${this.id()}/hqdefault.jpg`);
   // The id is validated to [A-Za-z0-9_-]{11} by the API before it reaches here.
   readonly src = computed(() => {
@@ -42,4 +49,8 @@ export class YoutubeComponent {
     return this.sanitizer.bypassSecurityTrustResourceUrl(`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`);
   });
 
+  constructor() {
+    // The placeholder's text is site content, which the admin (the page editor's preview) doesn't load up front.
+    this.site.ensureLoaded();
+  }
 }

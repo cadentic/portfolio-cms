@@ -1,4 +1,5 @@
-import { Component, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
+import { Brand } from '../core/brand';
 import { Block } from '../core/models';
 import { inlineMarkdown } from './inline';
 
@@ -25,7 +26,7 @@ import { inlineMarkdown } from './inline';
         }
         @case ('code') { <pre><code [attr.data-lang]="b.language || null">{{ b.text }}</code></pre> }
         @case ('callout') { <div class="callout" [class]="'callout ' + (b.tone || 'info')" role="note"><p [innerHTML]="md(b.text)"></p></div> }
-        @case ('html') { <div [innerHTML]="b.html"></div> }
+        @case ('html') { <div [innerHTML]="brand.html(b.html)"></div> }
         @case ('divider') { <hr /> }
       }
     }
@@ -33,6 +34,7 @@ import { inlineMarkdown } from './inline';
 })
 export class BlocksComponent {
   readonly blocks = input<Block[]>([]);
+  protected brand = inject(Brand);
   md(t?: string) {
     return inlineMarkdown(t ?? '');
   }

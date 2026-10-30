@@ -104,3 +104,59 @@ body:has(.admin){background:#0b1118}
 .a-media-name{font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .a-drop{display:grid;gap:10px;border:1px dashed var(--a-line);border-radius:10px;padding:14px}
 .a-drop.over{border-color:var(--a-accent);background:#12312a33}
+
+/* Hidden file inputs (media picker, resume): .admin input's 100% width would stretch them past the viewport. */
+.admin input.sr-only{width:1px;min-height:0;padding:0;border:0}
+
+/* Site content editor. The save bar sits under the 56px sticky top bar. */
+.a-site{display:grid;gap:14px}
+.a-site>h1{margin:0}
+.a-savebar{position:sticky;top:56px;z-index:5;background:var(--a-bg);padding:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--a-line)}
+.a-savebar-msg{flex-basis:100%;margin:0}
+@media(max-width:820px){.a-savebar{position:static}}
+.a-findbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto;font-size:.8rem}
+.a-findbar input:not([type=checkbox]){width:150px;flex:1 1 130px}
+.a-findbar label{gap:6px;color:var(--a-muted)}
+.a-msgs{margin:0;padding-left:18px;display:grid;gap:4px}
+.a-find .a-find-list{margin:10px 0 0;padding-left:22px;display:grid;gap:6px;font-size:.84rem;overflow-wrap:anywhere}
+.a-find mark{background:#3a2c10;color:var(--a-warn);border-radius:3px;padding:0 2px}
+.a-find mark.a-del{background:#3a1717;color:#ffb4b0;text-decoration:line-through}
+.a-find ins{background:#12312a;color:var(--a-accent);text-decoration:none;border-radius:3px;padding:0 2px;margin-left:2px}
+.a-sec-list{display:grid;gap:12px}
+details.a-sec{scroll-margin-top:130px}
+details.a-sec>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;list-style:none}
+details.a-sec>summary::-webkit-details-marker{display:none}
+details.a-sec>summary h2{margin:0;font-size:1.05rem}
+details.a-sec>summary:focus-visible{outline:2px solid var(--a-accent);outline-offset:4px;border-radius:4px}
+details.a-sec .a-chev{display:inline-block;color:var(--a-muted);transition:transform .15s}
+details.a-sec:not([open]) .a-chev{transform:rotate(-90deg)}
+.a-sec-body{margin-top:14px;border-top:1px solid var(--a-line);padding-top:14px}
+.a-sec-body h3{margin:6px 0 0}
+.a-sec-foot{justify-content:flex-end;border-top:1px solid var(--a-line);padding-top:10px}
+.a-site .ab{white-space:normal}
+.a-field{display:grid;gap:4px;min-width:0}
+.a-field>label{display:grid;gap:4px}
+.a-flabel{font-size:.82rem;font-weight:600;color:var(--a-ink)}
+.a-flabel.req::after{content:"Required";content:"Required" / "";margin-left:8px;font-size:.68rem;font-weight:700;color:var(--a-warn);text-transform:uppercase;letter-spacing:.06em}
+.a-hint{margin:0;font-size:.76rem;color:var(--a-muted)}
+.a-hint.warn{color:var(--a-warn)}
+.a-shows{margin:0;font-size:.8rem;color:var(--a-muted)}
+.admin .a-ferr{margin:0;font-size:.8rem;color:#ffb4b0}
+/* .admin p (muted) would otherwise win over these message colours. */
+.admin p.a-err{color:#ffb4b0}
+.admin p.a-ok{color:#a9f0d3}
+.admin p.a-warn{color:#ffd998}
+.a-field input[type=number]{max-width:160px}
+.a-field:has(.a-ferr) input,.a-field:has(.a-ferr) textarea{border-color:#a33b37}
+fieldset.a-block{margin:0;min-width:0}
+fieldset.a-block>legend{font-weight:700;font-size:.82rem;padding:0 6px}
+.a-thumb{width:96px;height:48px;object-fit:contain;background:#fff;border-radius:6px;border:1px solid var(--a-line)}
+.a-thumb.tall{height:96px;object-fit:cover}
+.a-thumb.yt{width:160px;height:90px;object-fit:cover;background:#000}
+.a-grow{flex:1 1 200px;width:auto;min-width:0}
+.a-video{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.a-key{border-color:#1d4d40}
+.a-key .a-flabel{font-size:1rem}
+.a-key input[type=number]{max-width:140px;font-size:1.1rem}
+.a-danger{border-color:#5e2422}
+.a-danger h2{margin:0}

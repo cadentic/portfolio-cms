@@ -1,13 +1,20 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, of, shareReplay } from 'rxjs';
+import { Observable, catchError, of, shareReplay, timeout } from 'rxjs';
 import { Page, Paged, SiteConfig } from './models';
+
+/** Default text that ends every meta tag and image alt; the owner can change it in Admin › SEO & branding. */
+export const DEFAULT_BRAND_SUFFIX = 'Sayantan Chakraborty, Oracle DBA';
 
 const fallbackConfig: SiteConfig = {
   site_url: '', blog_enabled: false, gtm_id: '', ga4_id: '', newsletter_topics: ['articles', 'videos', 'career'],
   consent_text: 'I agree to receive the newsletter by email. I can unsubscribe at any time.',
-  privacy_policy_url: '/privacy', privacy_policy_version: '', resume_available: true,
+  privacy_policy_url: '/privacy', privacy_policy_version: '', resume_available: true, verification_ttl_hours: 48,
+  brand_suffix: DEFAULT_BRAND_SUFFIX,
 };
+
+/** Same as the site content cold-start budget (D16): render slowly rather than fail. */
+const PAGE_TIMEOUT_MS = 15_000;
 
 @Injectable({ providedIn: 'root' })
 export class PublicApi {
@@ -26,11 +33,13 @@ export class PublicApi {
   }
 
   article(slug: string): Observable<Page> {
-    return this.http.get<Page>('/api/public/articles/' + encodeURIComponent(slug));
+    return this.http.get<Page>('/api/public/articles/' + encodeURIComponent(slug)).pipe(timeout(PAGE_TIMEOUT_MS));
   }
 
   page(path: string): Observable<Page> {
-    return this.http.get<Page>('/api/public/pages/' + path.split('/').map(encodeURIComponent).join('/'));
+    return this.http
+      .get<Page>('/api/public/pages/' + path.split('/').map(encodeURIComponent).join('/'))
+      .pipe(timeout(PAGE_TIMEOUT_MS));
   }
 
   redirect(path: string): Observable<{ to: string; status: number }> {
@@ -52,7 +61,10 @@ export class PublicApi {
   unsubscribe(token: string) {
     return this.http.post<{ message: string }>('/api/public/unsubscribe', { token });
   }
-  contact(body: { name: string; email: string; message: string; website: string }) {
+  contactCode(email: string) {
+    return this.http.post<{ message: string }>('/api/public/contact/code', { email });
+  }
+  contact(body: { name: string; email: string; message: string; code: string; website: string }) {
     return this.http.post<{ message: string }>('/api/public/contact', body);
   }
   resumeRequest(email: string) {

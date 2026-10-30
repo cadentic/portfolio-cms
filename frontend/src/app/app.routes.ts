@@ -13,9 +13,7 @@ export const routes: Routes = [
       { path: 'blog/:slug', data: { kind: 'article' }, loadComponent: () => import('./public/content-page.component').then((m) => m.ContentPageComponent) },
       { path: 'subscribe/confirm', loadComponent: () => import('./public/confirm.component').then((m) => m.ConfirmComponent) },
       { path: 'unsubscribe', loadComponent: () => import('./public/unsubscribe.component').then((m) => m.UnsubscribeComponent) },
-      { path: 'privacy', data: { doc: 'privacy' }, loadComponent: () => import('./public/legal.component').then((m) => m.LegalComponent) },
-      { path: 'terms', data: { doc: 'terms' }, loadComponent: () => import('./public/legal.component').then((m) => m.LegalComponent) },
-      { path: 'ai-policy', data: { doc: 'ai-policy' }, loadComponent: () => import('./public/legal.component').then((m) => m.LegalComponent) },
+      // Also serves the legal pages (/privacy, /terms, /ai-policy), which are CMS pages.
       { path: '**', data: { kind: 'page' }, loadComponent: () => import('./public/content-page.component').then((m) => m.ContentPageComponent) },
     ],
   },

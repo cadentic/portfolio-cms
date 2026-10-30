@@ -292,7 +292,7 @@ func TestAC12_BlogNotificationApprovalNoDuplicates(t *testing.T) {
 	before := e.Mock.Count("")
 
 	page := e.Admin("POST", "/api/admin/pages", map[string]any{"kind": "article", "title": "Data Guard in practice",
-		"excerpt": "Lessons from production.", "hero": map[string]any{"type": "youtube", "url": "https://youtu.be/dQw4w9WgXcQ"},
+		"excerpt": "Lessons from production.", "hero": map[string]any{"type": "youtube", "url": "https://youtu.be/gXT9izr0ljQ"},
 		"blocks": []map[string]any{{"type": "paragraph", "text": "Hello"}}})
 	if page.Status != 200 && page.Status != 201 {
 		t.Fatalf("create article: %d %s", page.Status, page.Body)

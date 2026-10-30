@@ -1,0 +1,403 @@
+{
+  "identity": {
+    "name": "Sayantan Chakraborty",
+    "initials": "SC",
+    "short_role": "Oracle DBA & Database Reliability Engineer",
+    "location": "Bangalore, India",
+    "city": "Bangalore",
+    "country_code": "IN",
+    "experience_years": 11,
+    "photo_url": "/images/sayantan.jpg",
+    "summary": "Oracle Database Administrator and Database Reliability Engineer with 11+ years of experience delivering high-availability solutions for enterprise, government and healthcare sectors, with deep experience in migration, patching and disaster recovery architecture.",
+    "linkedin_url": "https://www.linkedin.com/in/sayantan-chakraborty-y2022",
+    "github_url": "https://github.com/ust-sayantan",
+    "youtube_url": "https://www.youtube.com/@csayantan",
+    "youtube_handle": "@csayantan",
+    "other_links": [],
+    "education": [
+      {
+        "degree": "Master of Computer Applications (MCA)",
+        "school": "MAKAUT",
+        "years": "2006 – 2009"
+      },
+      {
+        "degree": "B.Sc",
+        "school": "University of Calcutta",
+        "years": "2001 – 2006"
+      }
+    ],
+    "languages": [
+      "English",
+      "Bengali",
+      "Hindi"
+    ]
+  },
+  "navigation": {
+    "brand_subtitle": "Oracle DBA · DRE",
+    "resume_label": "Request resume",
+    "mega_work": {
+      "title": "Selected work",
+      "text": "HA, DR, patching and automation outcomes."
+    },
+    "mega_videos": {
+      "title": "Videos",
+      "text": "Walkthroughs on YouTube @csayantan."
+    },
+    "mega_career": {
+      "title": "Career timeline",
+      "text": "Fifteen years from EBS to DRE."
+    },
+    "mega_blog": {
+      "title": "Blog & notes",
+      "text": "Oracle DBA articles and lessons learned."
+    }
+  },
+  "hero": {
+    "eyebrow": "Oracle DBA · Database Reliability Engineer · Bangalore",
+    "title": "Keeping critical databases",
+    "title_highlight": "available, fast and recoverable.",
+    "lead": "I'm Sayantan Chakraborty. For 11+ years I've run Oracle RAC, Data Guard, GoldenGate and EBS estates for enterprise, government and healthcare teams, with 24x7 operations and tested disaster recovery.",
+    "primary_cta_label": "Explore selected work",
+    "resume_cta_label": "Verify email to get resume",
+    "availability_visible": true,
+    "availability_text": "Open to DBA / DRE roles and consulting engagements",
+    "metrics": [
+      {
+        "value": "11+ years",
+        "label": "Oracle, RAC, Data Guard and EBS in production"
+      },
+      {
+        "value": "125 TB",
+        "label": "456 databases across 180 servers"
+      },
+      {
+        "value": "99.9%+",
+        "label": "availability in 24x7 operations"
+      }
+    ]
+  },
+  "about": {
+    "visible": true,
+    "label": "About",
+    "stamp_kicker": "Principles",
+    "stamp_lines": [
+      "Measure.",
+      "Protect.",
+      "Recover."
+    ],
+    "stamp_text": "Observable systems, rehearsed recovery and calm incident response.",
+    "kicker": "A little context",
+    "heading": "Deep Oracle expertise, with the whole platform in mind.",
+    "show_summary": true,
+    "paragraphs": [
+      "Most recently I led cloud infrastructure services for Equifax production at UST, keeping GoldenGate replication within sub-second SLAs. Before that I ran Oracle and PostgreSQL platforms at IIT Delhi and Ndedge Informatics, and spent years implementing Oracle EBS for public-sector and manufacturing clients."
+    ],
+    "skills": [
+      "Oracle 9i–19c",
+      "Oracle RAC",
+      "Data Guard",
+      "RMAN",
+      "ASM",
+      "GoldenGate",
+      "OEM 13c",
+      "AWR / ASH",
+      "Data Pump",
+      "Oracle EBS 11i / R12",
+      "PostgreSQL & Patroni",
+      "Ansible",
+      "Terraform",
+      "Docker",
+      "AWS",
+      "Google Cloud"
+    ]
+  },
+  "experience": {
+    "visible": true,
+    "label": "Experience",
+    "heading": "Built through real production challenges.",
+    "intro": "From Oracle EBS rollouts in 2010 to leading 24x7 database reliability for a global credit bureau.",
+    "cta_label": "Discuss my experience",
+    "roles": [
+      {
+        "period": "Apr 2025 – Jan 2026",
+        "title": "Lead II, Cloud Infrastructure Services",
+        "org": "UST (US Technology International), Bangalore",
+        "points": [
+          "Directed Equifax production infrastructure across databases, servers and VMs.",
+          "Resolved critical incidents across Oracle 11g/12c/19c, GoldenGate XAG and OEM 13c with sub-second replication SLAs.",
+          "Mentored junior DBAs and coordinated vulnerability management with zero unplanned downtime."
+        ]
+      },
+      {
+        "period": "Apr 2024 – Apr 2025",
+        "title": "Senior Subject-Matter Expert",
+        "org": "Ndedge Informatics, Kolkata",
+        "points": [
+          "Migrated production servers from Oracle Linux 7.9 to 8.2 hosting Oracle 19c.",
+          "Quarterly CPU/PSU patching across HA environments with zero unplanned downtime."
+        ]
+      },
+      {
+        "period": "Aug 2023 – Mar 2024",
+        "title": "Senior Project Scientist",
+        "org": "Indian Institute of Technology Delhi",
+        "points": [
+          "Containerised Linux infrastructure for 10+ research projects with 99.9% uptime.",
+          "PostgreSQL 15/16 with etcd and Patroni; automated database builds in under 30 minutes."
+        ]
+      },
+      {
+        "period": "Oct 2018 – Mar 2023",
+        "title": "Principal Consultant, Infrastructure Systems",
+        "org": "Ndedge Informatics, Kolkata",
+        "points": [
+          "Owned 15+ critical healthcare and manufacturing systems; led a team of 4 DBAs.",
+          "Migrations with 35% efficiency gains; Terraform IaC on GCP and AWS."
+        ]
+      }
+    ],
+    "earlier_label": "Show earlier roles (2010 – 2023)",
+    "earlier_roles": [
+      {
+        "period": "Apr – Aug 2023",
+        "title": "Project Consultant",
+        "org": "NIEPA, Delhi"
+      },
+      {
+        "period": "May – Jul 2017",
+        "title": "Oracle EBS Consultant",
+        "org": "Wizertech Informatics, Kolkata"
+      },
+      {
+        "period": "Sep 2016 – Feb 2017",
+        "title": "Oracle Database Administrator",
+        "org": "Magna Infotech, Kolkata"
+      },
+      {
+        "period": "Jun – Aug 2016",
+        "title": "Software Engineer",
+        "org": "Skilliantech India, Kolkata"
+      },
+      {
+        "period": "Jun – Nov 2015",
+        "title": "DBA",
+        "org": "Collebra Technologies, Kolkata"
+      },
+      {
+        "period": "Jul 2013 – Jul 2014",
+        "title": "Assistant Officer",
+        "org": "BIL Infratech, Kolkata"
+      },
+      {
+        "period": "Dec 2012 – Jul 2013",
+        "title": "EBS Consultant",
+        "org": "CSA Consulting, Kolkata"
+      },
+      {
+        "period": "2010 – 2012",
+        "title": "Early roles in Oracle EBS, Linux and DBA work",
+        "org": "Kolkata"
+      }
+    ]
+  },
+  "work": {
+    "visible": true,
+    "label": "Selected work",
+    "heading": "Outcomes that hold up in production.",
+    "intro": "Client details stay confidential; the scale, the approach and the measured results are real.",
+    "items": [
+      {
+        "tag": "Scale",
+        "title": "Large-estate operations",
+        "text": "Directed production infrastructure managing over 125 TB of data across 456 databases and 180 servers."
+      },
+      {
+        "tag": "Patching",
+        "title": "250+ Oracle patches",
+        "text": "Executed CPU/PSU and EBS patching across clustered environments spanning Oracle 10g to 19c."
+      },
+      {
+        "tag": "Recovery",
+        "title": "Downtime cut by 35%",
+        "text": "RMAN backup/recovery improvements and operational optimisation reduced downtime by 35%."
+      },
+      {
+        "tag": "Disaster recovery",
+        "title": "DR objectives met",
+        "text": "Enforced RTO under 4 hours and RPO under 1 hour across 20+ production systems."
+      },
+      {
+        "tag": "Incident response",
+        "title": "Critical incidents resolved",
+        "text": "Resolved 15+ critical production incidents involving HA configurations and database performance."
+      },
+      {
+        "tag": "Automation",
+        "title": "Automated database builds",
+        "text": "Standardised framework provisioning production-ready databases on VMs in under 30 minutes."
+      }
+    ]
+  },
+  "organizations": {
+    "visible": true,
+    "label": "Career ecosystem",
+    "heading": "Organisations & engagements",
+    "intro": "A selection of employers and client engagements from my career. Names only; no endorsement implied.",
+    "items": [
+      {
+        "name": "UST",
+        "note": "Employer",
+        "logo_url": "",
+        "url": ""
+      },
+      {
+        "name": "Equifax",
+        "note": "Client engagement",
+        "logo_url": "",
+        "url": ""
+      },
+      {
+        "name": "IIT Delhi",
+        "note": "Employer",
+        "logo_url": "",
+        "url": ""
+      },
+      {
+        "name": "Ndedge Informatics",
+        "note": "Employer",
+        "logo_url": "",
+        "url": ""
+      },
+      {
+        "name": "NIEPA",
+        "note": "Project engagement",
+        "logo_url": "",
+        "url": ""
+      }
+    ]
+  },
+  "expertise": {
+    "visible": true,
+    "label": "Expertise",
+    "heading": "What I bring to the team.",
+    "intro": "Grouped by the problems they solve rather than by tool lists.",
+    "items": [
+      {
+        "title": "High availability & DR",
+        "text": "RAC, Data Guard and GoldenGate designs with tested DR drills and clear RTO/RPO targets.",
+        "chips": [
+          "RAC",
+          "Data Guard",
+          "GoldenGate",
+          "DR drills"
+        ]
+      },
+      {
+        "title": "Performance & operations",
+        "text": "AWR/ASH analysis, SQL tuning, capacity planning and calm 24x7 incident response.",
+        "chips": [
+          "AWR",
+          "ASH",
+          "SQL tuning",
+          "OEM 13c"
+        ]
+      },
+      {
+        "title": "Automation & cloud",
+        "text": "Infrastructure as code and repeatable builds across on-premises, AWS and Google Cloud.",
+        "chips": [
+          "Ansible",
+          "Terraform",
+          "Docker",
+          "AWS / GCP"
+        ]
+      }
+    ]
+  },
+  "videos": {
+    "visible": true,
+    "label": "Videos",
+    "heading": "Watch the walkthroughs.",
+    "intro": "Hands-on videos on Oracle RAC, Data Guard, RMAN recovery and day-to-day DBA work.",
+    "channel_cta_label": "Subscribe on YouTube",
+    "featured": {
+      "youtube_id": "gXT9izr0ljQ",
+      "title": "Featured video",
+      "description": "",
+      "published_on": ""
+    },
+    "items": [
+      {
+        "youtube_id": "gXT9izr0ljQ",
+        "title": "Featured video",
+        "description": "",
+        "published_on": ""
+      }
+    ],
+    "include_article_videos": true,
+    "page_heading": "Videos",
+    "page_intro": "Walkthroughs on Oracle RAC, Data Guard, RMAN recovery and day-to-day DBA work, from the YouTube channel @csayantan.",
+    "page_cta_label": "Open the channel on YouTube",
+    "empty_text": "New videos appear here as they are published. Until then, visit the channel above.",
+    "placeholder_title": "Video coming soon",
+    "placeholder_text": "Watch the latest Oracle DBA walkthroughs on YouTube."
+  },
+  "blog": {
+    "visible": true,
+    "label": "Notes & insights",
+    "heading": "Ideas worth sharing.",
+    "intro": "Articles on Oracle administration, reliability engineering and lessons from production.",
+    "cta_label": "All articles",
+    "page_heading": "Notes & insights",
+    "page_intro": "Oracle DBA, high availability and reliability engineering, written from production experience.",
+    "empty_text": "No articles yet. Subscribe below to hear when the first one is published."
+  },
+  "newsletter": {
+    "visible": true,
+    "label": "Newsletter",
+    "heading": "New articles and videos, straight to your inbox.",
+    "intro": "Practical Oracle DBA and database reliability notes, at most a few times a month. Confirm by email; unsubscribe in one click."
+  },
+  "faq": {
+    "visible": true,
+    "label": "Frequently asked",
+    "heading": "Quick answers",
+    "items": [
+      {
+        "q": "What does Sayantan Chakraborty specialise in?",
+        "a": "Oracle database administration and database reliability engineering: Oracle RAC, Data Guard, GoldenGate, RMAN, Oracle EBS, performance tuning and disaster recovery, plus automation with Ansible and Terraform."
+      },
+      {
+        "q": "How many years of experience does he have?",
+        "a": "More than 11 years running production Oracle databases for enterprise, government and healthcare organisations, including estates of 125 TB, 456 databases and 180 servers."
+      },
+      {
+        "q": "Where is he based?",
+        "a": "Bangalore, India. He works with teams remotely as well."
+      },
+      {
+        "q": "How can I get his resume?",
+        "a": "Use \"Verify email to get resume\" on this site. A one-time code is emailed to you, and the PDF downloads once the code is verified."
+      },
+      {
+        "q": "Where can I watch his videos?",
+        "a": "On YouTube at @csayantan, where he publishes Oracle DBA and database reliability walkthroughs."
+      }
+    ]
+  },
+  "contact": {
+    "label": "Contact",
+    "heading": "Let's talk about the work ahead.",
+    "intro": "Have a role, a migration or a reliability problem in mind? Send a note with the context that matters.",
+    "show_links": true
+  },
+  "seo": {
+    "home_title": "Oracle DBA & Database Reliability Engineer in Bangalore",
+    "home_description": "Oracle Database Administrator and Database Reliability Engineer in Bangalore with 11+ years of RAC, Data Guard, GoldenGate, RMAN and Oracle EBS experience. Portfolio, articles and videos.",
+    "videos_title": "Videos: Oracle DBA walkthroughs",
+    "videos_description": "Video walkthroughs on Oracle RAC, Data Guard, RMAN, GoldenGate and database reliability by Sayantan Chakraborty (YouTube @csayantan).",
+    "blog_title": "Blog: Oracle DBA notes & insights",
+    "blog_description": "Articles on Oracle RAC, Data Guard, RMAN, GoldenGate, EBS and database reliability engineering by Sayantan Chakraborty.",
+    "llms_summary": "Portfolio of Sayantan Chakraborty, an Oracle Database Administrator and Database Reliability Engineer (11+ years, Bangalore, India) specialising in Oracle RAC, Data Guard, GoldenGate, RMAN, OEM, Oracle EBS, PostgreSQL/Patroni, high availability, disaster recovery and automation with Ansible and Terraform."
+  }
+}

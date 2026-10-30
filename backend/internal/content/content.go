@@ -4,25 +4,50 @@
 package content
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/cadentic/portfolio-cms/backend/internal/render"
 	"github.com/cadentic/portfolio-cms/backend/internal/store"
+	"github.com/cadentic/portfolio-cms/backend/internal/versions"
 )
 
 var ErrNotFound = errors.New("page not found")
+
+// ErrProtected is returned for a change that would break a legal page the
+// site links to (footer, consent records).
+var ErrProtected = errors.New("this legal page is required by the site (footer links and consent records): edit its text, but it cannot be deleted, unpublished, renamed or moved")
+
+// InvalidError is an update the caller has to fix, as opposed to a database
+// failure. Its text is the problem, as before.
+type InvalidError struct{ Err error }
+
+func (e *InvalidError) Error() string { return e.Err.Error() }
+func (e *InvalidError) Unwrap() error { return e.Err }
+
+// protectedSlugs are the top-level legal pages seeded by migration 0007. They
+// are not in reserved: UNIQUE (kind, slug) and the seeded rows block copies.
+var protectedSlugs = map[string]bool{"privacy": true, "terms": true, "ai-policy": true}
+
+func protectedList() []string { return slices.Sorted(maps.Keys(protectedSlugs)) }
+
+const protectedSQL = `kind='page' AND parent_id IS NULL AND slug = ANY($2)`
 
 type Hero struct {
 	Type       string `json:"type"` // none | image | video | youtube
@@ -125,10 +150,10 @@ type Service struct {
 var (
 	slugRe   = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	ytIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
-	ytURLRe  = regexp.MustCompile(`(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})`)
-	reserved = map[string]bool{"admin": true, "api": true, "blog": true, "subscribe": true, "unsubscribe": true, "privacy": true,
+	ytURLRe  = regexp.MustCompile(`(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})(?:[?&#/]|$)`)
+	reserved = map[string]bool{"admin": true, "api": true, "blog": true, "subscribe": true, "unsubscribe": true,
 		"media": true, "assets": true, "sitemap.xml": true, "robots.txt": true, "oauth": true, "mcp": true, "videos": true,
-		"terms": true, "ai-policy": true, "llms.txt": true, "healthz": true, "readyz": true, "metrics": true, "app-config.json": true, "images": true}
+		"llms.txt": true, "healthz": true, "readyz": true, "metrics": true, "app-config.json": true, "images": true}
 	blockKind = map[string]bool{"heading": true, "paragraph": true, "list": true, "quote": true, "code": true, "callout": true, "divider": true, "html": true}
 )
 
@@ -173,7 +198,8 @@ func safeURL(s string) bool {
 	if s == "" {
 		return true
 	}
-	if strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "//") {
+	// Browsers read /\host as //host.
+	if strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "//") && !strings.HasPrefix(s, "/\\") {
 		return true
 	}
 	u, err := url.Parse(s)
@@ -409,32 +435,185 @@ func (s *Service) Create(ctx context.Context, in Input, actor string) (*Page, er
 	return p, err
 }
 
-func (s *Service) Update(ctx context.Context, id string, in Input) (*Page, error) {
-	cur, err := s.Get(ctx, id)
+// updateCols is the order in which changed columns are reported.
+var updateCols = []string{"title", "slug", "excerpt", "hero", "blocks", "featured_image_url", "author_name", "categories", "tags",
+	"seo", "menu_order", "parent_id"}
+
+// Update applies the fields present in in. It returns the changed columns;
+// when nothing changed it writes nothing (updated_at stays) and the list is
+// empty. A protected legal page cannot be renamed, moved or change kind, and
+// every change to one is kept in content_versions.
+func (s *Service) Update(ctx context.Context, id string, in Input, actor string) (*Page, []string, error) {
+	return s.update(ctx, id, in, actor, "update")
+}
+
+func (s *Service) update(ctx context.Context, id string, in Input, actor, action string) (*Page, []string, error) {
+	if !validID(id) {
+		return nil, nil, ErrNotFound
+	}
+	var out *Page
+	var changed []string
+	err := store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
+		cur, err := scan(tx.QueryRow(ctx, `SELECT `+cols+` FROM cms_pages WHERE id=$1 FOR UPDATE`, id))
+		if err != nil {
+			return err
+		}
+		v, err := s.prepare(&in, cur.Kind)
+		if err != nil {
+			return &InvalidError{err}
+		}
+		if pid, ok := v["parent_id"].(string); ok && pid == id {
+			return &InvalidError{errors.New("a page cannot be its own parent")}
+		}
+		protected := isProtected(cur)
+		if protected {
+			if sl, ok := v["slug"].(string); ok && sl != cur.Slug {
+				return ErrProtected
+			}
+			if pid, ok := v["parent_id"].(string); ok && pid != "" {
+				return ErrProtected
+			}
+			if in.Kind != nil && *in.Kind != cur.Kind {
+				return ErrProtected
+			}
+		}
+		sets := []string{"updated_at=now()"}
+		args := []any{id}
+		for _, col := range updateCols {
+			val, ok := v[col]
+			if !ok || same(cur, col, val) {
+				continue
+			}
+			changed = append(changed, col)
+			args = append(args, val)
+			sets = append(sets, fmt.Sprintf("%s=$%d", col, len(args)))
+		}
+		if len(changed) == 0 {
+			out = cur
+			return nil
+		}
+		p, err := scan(tx.QueryRow(ctx, `UPDATE cms_pages SET `+strings.Join(sets, ",")+` WHERE id=$1 RETURNING `+cols, args...))
+		if store.IsUniqueViolation(err) {
+			return &InvalidError{errors.New("another " + cur.Kind + " already uses this slug")}
+		}
+		if err != nil {
+			return err
+		}
+		if protected {
+			if _, err := versions.Record(ctx, tx, "page", id, action, changed, snapshot(p), actor, 0); err != nil {
+				return err
+			}
+		}
+		out = p
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	v, err := s.prepare(&in, cur.Kind)
+	return out, changed, nil
+}
+
+// same reports whether the prepared value of col equals the current row.
+// jsonb columns and lists compare by their JSON through the same Go types.
+func same(cur *Page, col string, val any) bool {
+	asJSON := func(v any) []byte {
+		b, _ := json.Marshal(v)
+		return b
+	}
+	switch col {
+	case "title":
+		return val == cur.Title
+	case "slug":
+		return val == cur.Slug
+	case "excerpt":
+		return val == cur.Excerpt
+	case "featured_image_url":
+		return val == cur.FeaturedImageURL
+	case "author_name":
+		return val == cur.AuthorName
+	case "menu_order":
+		return val == cur.MenuOrder
+	case "hero":
+		return bytes.Equal(val.([]byte), asJSON(cur.Hero))
+	case "blocks":
+		return bytes.Equal(val.([]byte), asJSON(cur.Blocks))
+	case "seo":
+		return bytes.Equal(val.([]byte), asJSON(cur.SEO))
+	case "categories":
+		return slices.Equal(val.([]string), cur.Categories)
+	case "tags":
+		return slices.Equal(val.([]string), cur.Tags)
+	case "parent_id":
+		pid, _ := val.(string)
+		return cur.ParentID == nil && val == nil || cur.ParentID != nil && *cur.ParentID == pid
+	}
+	return false
+}
+
+// pageSnapshot is what a legal page version keeps; migration 0007 seeds the
+// same shape.
+type pageSnapshot struct {
+	Title   string  `json:"title"`
+	Excerpt string  `json:"excerpt"`
+	Hero    Hero    `json:"hero"`
+	Blocks  []Block `json:"blocks"`
+	SEO     SEO     `json:"seo"`
+}
+
+func snapshot(p *Page) []byte {
+	b, _ := json.Marshal(pageSnapshot{Title: p.Title, Excerpt: p.Excerpt, Hero: p.Hero, Blocks: p.Blocks, SEO: p.SEO})
+	return b
+}
+
+// RestoreVersion puts back the text of a saved version (title, excerpt, hero,
+// blocks and SEO) through Update, recorded with action "restore". Like Update
+// it returns the changed columns: none when the page already has that text.
+func (s *Service) RestoreVersion(ctx context.Context, id string, versionID int64, actor string) (*Page, []string, error) {
+	v, err := versions.Get(ctx, s.DB, "page", id, versionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if pid, ok := v["parent_id"].(string); ok && pid == id {
-		return nil, errors.New("a page cannot be its own parent")
+	var snap pageSnapshot
+	if err := json.Unmarshal(v.Snapshot, &snap); err != nil {
+		return nil, nil, fmt.Errorf("version %d: %w", versionID, err)
 	}
-	if len(v) == 0 {
-		return cur, nil
+	if snap.Blocks == nil {
+		snap.Blocks = []Block{}
 	}
-	sets := []string{"updated_at=now()"}
-	args := []any{id}
-	for k, val := range v {
-		args = append(args, val)
-		sets = append(sets, fmt.Sprintf("%s=$%d", k, len(args)))
+	return s.update(ctx, id, Input{Title: &snap.Title, Excerpt: &snap.Excerpt, Hero: &snap.Hero, Blocks: snap.Blocks, SEO: &snap.SEO},
+		actor, "restore")
+}
+
+func isProtected(p *Page) bool {
+	return p.Kind == "page" && p.ParentID == nil && protectedSlugs[p.Slug]
+}
+
+// validID keeps a malformed id from reaching a uuid column as an SQL error.
+func validID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
+}
+
+// IsProtected reports whether id is one of the legal pages.
+func (s *Service) IsProtected(ctx context.Context, id string) (bool, error) {
+	if !validID(id) {
+		return false, nil
 	}
-	p, err := scan(s.DB.QueryRow(ctx, `UPDATE cms_pages SET `+strings.Join(sets, ",")+` WHERE id=$1 RETURNING `+cols, args...))
-	if store.IsUniqueViolation(err) {
-		return nil, errors.New("another " + cur.Kind + " already uses this slug")
+	var ok bool
+	err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM cms_pages WHERE id=$1 AND `+protectedSQL+`)`, id, protectedList()).Scan(&ok)
+	return ok, err
+}
+
+// notChanged explains why a guarded statement touched no row.
+func (s *Service) notChanged(ctx context.Context, id string) error {
+	var exists bool
+	if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM cms_pages WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return err
 	}
-	return p, err
+	if exists {
+		return ErrProtected
+	}
+	return ErrNotFound
 }
 
 func (s *Service) Get(ctx context.Context, id string) (*Page, error) {
@@ -484,7 +663,9 @@ type PublishResult struct {
 
 // Publish makes a page/article public. FirstPublish is true only for native
 // content published for the first time — imported content (source set) or a
-// re-publish never counts, so routine edits never notify subscribers.
+// re-publish never counts, so routine edits never notify subscribers. A page
+// that is already published keeps its updated_at ("Last updated", sitemap
+// lastmod), since nothing in it changed.
 func (s *Service) Publish(ctx context.Context, id string) (*PublishResult, error) {
 	var res PublishResult
 	err := store.InTx(ctx, s.DB, func(tx pgx.Tx) error {
@@ -497,7 +678,8 @@ func (s *Service) Publish(ctx context.Context, id string) (*PublishResult, error
 			return err
 		}
 		p, err := scan(tx.QueryRow(ctx, `UPDATE cms_pages SET status='published', published_at=COALESCE(published_at, now()),
-			first_published_at=COALESCE(first_published_at, now()), updated_at=now() WHERE id=$1 RETURNING `+cols, id))
+			first_published_at=COALESCE(first_published_at, now()),
+			updated_at=CASE WHEN status='published' THEN updated_at ELSE now() END WHERE id=$1 RETURNING `+cols, id))
 		if err != nil {
 			return err
 		}
@@ -507,25 +689,53 @@ func (s *Service) Publish(ctx context.Context, id string) (*PublishResult, error
 	return &res, err
 }
 
+// Unpublish moves a page back to draft. Legal pages stay published (ErrProtected).
 func (s *Service) Unpublish(ctx context.Context, id string) (*Page, error) {
-	return scan(s.DB.QueryRow(ctx, `UPDATE cms_pages SET status='draft', updated_at=now() WHERE id=$1 RETURNING `+cols, id))
+	if !validID(id) {
+		return nil, ErrNotFound
+	}
+	p, err := scan(s.DB.QueryRow(ctx, `UPDATE cms_pages SET status='draft', updated_at=now()
+		WHERE id=$1 AND NOT (`+protectedSQL+`) RETURNING `+cols, id, protectedList()))
+	if errors.Is(err, ErrNotFound) {
+		return nil, s.notChanged(ctx, id)
+	}
+	return p, err
 }
 
+// Delete removes a page. Legal pages cannot be deleted (ErrProtected).
 func (s *Service) Delete(ctx context.Context, id string) error {
-	_, err := s.DB.Exec(ctx, `DELETE FROM cms_pages WHERE id=$1`, id)
-	return err
+	if !validID(id) {
+		return ErrNotFound
+	}
+	tag, err := s.DB.Exec(ctx, `DELETE FROM cms_pages WHERE id=$1 AND NOT (`+protectedSQL+`)`, id, protectedList())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return s.notChanged(ctx, id)
+	}
+	return nil
 }
 
 // --- public reads ----------------------------------------------------------
 
 func (s *Service) PublishedArticle(ctx context.Context, slug string) (*Page, error) {
+	if !lookupable(slug) {
+		return nil, ErrNotFound
+	}
 	return scan(s.DB.QueryRow(ctx, `SELECT `+cols+` FROM cms_pages WHERE kind='article' AND slug=$1 AND status='published'`, slug))
+}
+
+// lookupable rejects text Postgres cannot compare as UTF-8 (NUL bytes,
+// invalid sequences), so a crafted URL is a 404 rather than a 500.
+func lookupable(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
 // PublishedPage resolves "/parent/child" paths by walking parent_id.
 func (s *Service) PublishedPage(ctx context.Context, path string) (*Page, error) {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segs) == 0 || segs[0] == "" || len(segs) > 6 {
+	if len(segs) == 0 || segs[0] == "" || len(segs) > 6 || !lookupable(path) {
 		return nil, ErrNotFound
 	}
 	var parent *string

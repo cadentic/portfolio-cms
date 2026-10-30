@@ -134,7 +134,7 @@ export class MediaLibraryComponent {
     this.api.delete('media/' + m.id + (force ? '?force=true' : '')).subscribe({
       next: () => { this.notice.set('Deleted.'); this.load(this.offset); },
       error: (e) => {
-        if (e?.status === 409 && confirm(errMsg(e) + '\n\nDelete anyway? Those pages will show a broken link.')) this.remove(m, true);
+        if (e?.status === 409 && confirm(errMsg(e) + '\n\nDelete anyway? Pages and emails using it will show a broken image; site sections fall back to text or the default photo.')) this.remove(m, true);
         else if (e?.status !== 409) this.error.set(errMsg(e));
       },
     });

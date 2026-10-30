@@ -13,6 +13,11 @@ import { AuthService } from './auth.service';
         <div class="a-logo"><b>{{ '{' }}y{{ '}' }}</b> Portfolio Admin</div>
         <nav class="a-nav">
           <a routerLink="/admin" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">⌂ Dashboard</a>
+          <div class="group">Site content</div>
+          <a routerLink="/admin/site/home" routerLinkActive="active">◧ Home page</a>
+          <a routerLink="/admin/site/profile" routerLinkActive="active">◉ Site profile</a>
+          <a routerLink="/admin/site/videos" routerLinkActive="active">▷ Videos</a>
+          <a routerLink="/admin/site/legal" routerLinkActive="active">§ Legal pages</a>
           <div class="group">Content</div>
           <a routerLink="/admin/content" routerLinkActive="active" [queryParams]="{ kind: 'article' }">✎ Blog articles</a>
           <a routerLink="/admin/content" [queryParams]="{ kind: 'page' }">▤ Pages</a>
@@ -27,6 +32,7 @@ import { AuthService } from './auth.service';
           <a class="sub" routerLink="/admin/email/suppressions" routerLinkActive="active">Suppressions</a>
           <a class="sub" routerLink="/admin/email/settings" routerLinkActive="active">Settings</a>
           <div class="group">System</div>
+          <a routerLink="/admin/seo" routerLinkActive="active">⌕ SEO &amp; branding</a>
           <a routerLink="/admin/mcp" routerLinkActive="active">⚡ MCP connector</a>
           <a routerLink="/admin/audit" routerLinkActive="active">☰ Audit log</a>
           <a href="/" target="_blank" rel="noopener">↗ View site</a>
@@ -67,7 +73,8 @@ export class AdminLayoutComponent {
   }
 
   async logout() {
+    // Leave first, so the unsaved-changes guard can stop us while the session still works.
+    if (!(await this.router.navigateByUrl('/admin/login'))) return;
     await this.auth.logout();
-    this.router.navigateByUrl('/admin/login');
   }
 }

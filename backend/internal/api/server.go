@@ -8,8 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -30,6 +32,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
 	"github.com/cadentic/portfolio-cms/backend/internal/settings"
+	"github.com/cadentic/portfolio-cms/backend/internal/sitecontent"
 	"github.com/cadentic/portfolio-cms/backend/internal/subscribers"
 	"github.com/cadentic/portfolio-cms/backend/internal/tokens"
 )
@@ -53,6 +56,7 @@ type Server struct {
 	OAuth       *oauth.Server
 	MCP         *mcp.Server
 	Media       media.Storage
+	SiteContent *sitecontent.Service
 }
 
 func (s *Server) Routes() http.Handler {
@@ -75,14 +79,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", s.OAuth.ProtectedResourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.OAuth.AuthorizationServerMetadata)
 	mux.HandleFunc("POST /oauth/register", s.limited("oauth_register", 20, time.Hour, s.OAuth.Register))
-	mux.HandleFunc("GET /oauth/authorize", s.OAuth.Authorize)
-	mux.HandleFunc("GET /api/oauth/client", s.OAuth.ClientInfo)
+	mux.HandleFunc("GET /oauth/authorize", s.limited("oauth_authorize", 120, time.Hour, s.OAuth.Authorize))
+	mux.HandleFunc("GET /api/oauth/client", s.limited("oauth_client", 120, time.Hour, s.OAuth.ClientInfo))
 	mux.Handle("POST /api/oauth/approve", auth.AdminOnly(s.Verifier, s.Authorizer, writeError, http.HandlerFunc(s.OAuth.Approve)))
 	mux.HandleFunc("POST /oauth/token", s.limited("oauth_token", 60, time.Hour, s.OAuth.Token))
-	mux.HandleFunc("POST /oauth/revoke", s.OAuth.Revoke)
+	mux.HandleFunc("POST /oauth/revoke", s.limited("oauth_revoke", 60, time.Hour, s.OAuth.Revoke))
 	mux.Handle("/mcp", s.OAuth.Protect(s.MCP))
 
-	return s.recoverer(s.requestLog(s.securityHeaders(s.cors(mux))))
+	return s.recoverer(s.requestLog(s.securityHeaders(s.cors(s.csrf(mux)))))
 }
 
 // --- helpers ------------------------------------------------------------------
@@ -101,7 +105,14 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, apiError{Error: msg})
 }
 
+// decode reads a JSON body. A JSON Content-Type is required: an HTML form can
+// only send text/plain, urlencoded or multipart bodies, so this also stops
+// cross-site form posts that smuggle JSON in a text/plain body.
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "send the request body as application/json")
+		return false
+	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
 	if err := dec.Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -181,7 +192,7 @@ func (w *statusWriter) Flush() {
 func (s *Server) requestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
-		if id == "" || len(id) > 64 {
+		if !requestIDRe.MatchString(id) {
 			b := make([]byte, 8)
 			_, _ = rand.Read(b)
 			id = hex.EncodeToString(b)
@@ -199,6 +210,10 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 			"duration_ms", time.Since(start).Milliseconds(), "request_id", id)
 	})
 }
+
+// requestIDRe limits client-supplied request ids to safe characters, so they
+// cannot forge log lines or carry markup into responses.
+var requestIDRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,8 +233,13 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
+			// Media (/media/) stays embeddable: newsletters load images from it.
+			h.Set("Cross-Origin-Resource-Policy", "same-origin")
+			// JSON is never a document: block it from rendering or loading anything.
+			h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		}
 		if s.Cfg.IsProduction() {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
@@ -248,6 +268,32 @@ func (s *Server) cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// csrf rejects cross-origin browser requests with unsafe methods (Go's
+// Sec-Fetch-Site / Origin check). Admin calls already need a bearer token, so
+// this mainly guards the public forms; it also backs up the JSON
+// Content-Type check in decode. The site's own origins are trusted (www and
+// apex are "same-site", not "same-origin"). Server-to-server callers send no
+// Sec-Fetch-Site or Origin and pass; endpoints built for third parties are
+// exempt explicitly: provider webhooks, RFC 8058 one-click unsubscribe, and
+// the OAuth/MCP endpoints, which only accept bearer tokens or PKCE codes.
+func (s *Server) csrf(next http.Handler) http.Handler {
+	p := http.NewCrossOriginProtection()
+	for _, o := range append([]string{s.Cfg.PublicSiteURL}, s.Cfg.CORSOrigins...) {
+		if err := p.AddTrustedOrigin(o); err != nil {
+			s.Log.Warn("csrf: ignoring invalid trusted origin", "origin", o, "err", err)
+		}
+	}
+	for _, pattern := range []string{"/api/webhooks/", "/api/public/unsubscribe/one-click", "/oauth/", "/mcp"} {
+		p.AddInsecureBypassPattern(pattern)
+	}
+	p.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Log.Warn("cross-origin request blocked", "method", r.Method, "path", r.URL.Path, "origin", r.Header.Get("Origin"),
+			"request_id", r.Header.Get("X-Request-ID"))
+		writeError(w, http.StatusForbidden, "cross-site requests are not allowed")
+	}))
+	return p.Handler(next)
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

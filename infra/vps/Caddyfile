@@ -4,5 +4,15 @@
 # playbook switches DNS.
 {$SITE_ADDRESSES} {
 	encode zstd gzip
-	reverse_proxy web:4000
+	# Uploads are capped at MEDIA_MAX_UPLOAD_MB (30 MB by default) by the API;
+	# refuse anything far larger here before it reaches the app.
+	request_body {
+		max_size 40MB
+	}
+	# Don't advertise the server software. The app sets CSP, HSTS and the
+	# other security headers itself.
+	header -Server
+	reverse_proxy web:4000 {
+		header_down -X-Powered-By
+	}
 }

@@ -43,7 +43,7 @@ interface Suppression { id: string; email: string; scope: string; reason: string
     </section>
 
     @if (showAdd()) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && showAdd.set(false)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? showAdd.set(false) : null">
         <form class="a-modal a-form" role="dialog" aria-modal="true" aria-labelledby="sup-t" (ngSubmit)="add()">
           <h3 id="sup-t" style="margin:0">Suppress an address</h3>
           <label>Email<input type="email" name="email" [(ngModel)]="form.email" required /></label>

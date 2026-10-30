@@ -1,7 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { PublicApi, apiError } from '../core/public-api.service';
 import { Seo } from '../core/seo.service';
+import { SiteContentService } from '../core/site-content.service';
 
 /**
  * Double opt-in confirmation. The token is only consumed when the visitor
@@ -26,8 +29,8 @@ import { Seo } from '../core/seo.service';
         }
         @case ('expired') {
           <h1 id="c-title" style="font-size:2.2rem">This link has expired</h1>
-          <p>Confirmation links are valid for 48 hours. Subscribe again and we'll send a fresh link.</p>
-          <a class="btn btn-primary" routerLink="/" fragment="contact">Subscribe again</a>
+          <p>Confirmation links are valid for {{ ttl() }} hours. Subscribe again and we'll send a fresh link.</p>
+          <a class="btn btn-primary" [routerLink]="homeNewsletter() ? '/' : '/blog'" [fragment]="homeNewsletter() ? 'newsletter' : undefined">Subscribe again</a>
         }
         @default {
           <h1 id="c-title" style="font-size:2.2rem">This link isn't valid</h1>
@@ -40,12 +43,16 @@ import { Seo } from '../core/seo.service';
 })
 export class ConfirmComponent {
   private api = inject(PublicApi);
+  private site = inject(SiteContentService);
   private token = inject(ActivatedRoute).snapshot.queryParamMap.get('token') ?? '';
   readonly state = signal<'ready' | 'done' | 'expired' | 'invalid'>(this.token ? 'ready' : 'invalid');
   readonly busy = signal(false);
   readonly email = signal('');
   readonly already = signal(false);
   readonly error = signal('');
+  readonly ttl = toSignal(this.api.site().pipe(map((c) => c.verification_ttl_hours || 48)), { initialValue: 48 });
+  /** The home page newsletter block when it is shown; /blog always has the form. */
+  readonly homeNewsletter = computed(() => this.site.content().newsletter.visible);
 
   constructor() {
     inject(Seo).set({ title: 'Confirm subscription', description: 'Confirm your newsletter subscription.', path: '/subscribe/confirm', noindex: true });

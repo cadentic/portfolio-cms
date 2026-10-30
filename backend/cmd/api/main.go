@@ -33,6 +33,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
 	"github.com/cadentic/portfolio-cms/backend/internal/retention"
 	"github.com/cadentic/portfolio-cms/backend/internal/settings"
+	"github.com/cadentic/portfolio-cms/backend/internal/sitecontent"
 	"github.com/cadentic/portfolio-cms/backend/internal/store"
 	"github.com/cadentic/portfolio-cms/backend/internal/subscribers"
 	"github.com/cadentic/portfolio-cms/backend/internal/templates"
@@ -102,6 +103,7 @@ func run(log *slog.Logger) error {
 	subs := &subscribers.Service{DB: db, Settings: sets, Mailer: mail, Signer: signer, SiteURL: cfg.PublicSiteURL}
 	camps := &campaigns.Service{DB: db, Settings: sets, Subscribers: subs, SiteURL: cfg.PublicSiteURL}
 	cms := &content.Service{DB: db, SiteURL: cfg.PublicSiteURL}
+	site := &sitecontent.Service{DB: db, TTL: 5 * time.Second, Log: log}
 	alertSvc := &alerts.Service{DB: db, Log: log}
 	if cfg.AdminAlertEmail != "" {
 		alertSvc.Notify = func(ctx context.Context, id string, sev alerts.Severity, kind, msg string) {
@@ -139,8 +141,9 @@ func run(log *slog.Logger) error {
 		Providers: provs, Registry: registry, Subscribers: subs, Campaigns: camps, Content: cms,
 		Mailer: mail, Alerts: alertSvc, Limiter: &ratelimit.Limiter{DB: db}, Signer: signer,
 		OAuth: &oauth.Server{DB: db, Issuer: cfg.PublicSiteURL, SiteURL: cfg.PublicSiteURL, Authorizer: authz},
-		MCP:   &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, Log: log, SiteURL: cfg.PublicSiteURL},
-		Media: mediaStore,
+		MCP: &mcp.Server{DB: db, Content: cms, Campaigns: camps, Subscribers: subs, Providers: provs, SiteContent: site, Log: log,
+			SiteURL: cfg.PublicSiteURL},
+		Media: mediaStore, SiteContent: site,
 	}
 
 	var wg sync.WaitGroup
@@ -232,11 +235,10 @@ func seedProviders(ctx context.Context, db *pgxpool.Pool, r *providers.Repo, log
 		return err
 	}
 	defer conn.Release()
-	const lockID = 7262411002
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, store.LockProviders); err != nil {
 		return err
 	}
-	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockID) //nolint:errcheck
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, store.LockProviders) //nolint:errcheck
 	existing, err := r.List(ctx)
 	if err != nil || len(existing) > 0 {
 		return err

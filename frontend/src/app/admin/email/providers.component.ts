@@ -65,7 +65,7 @@ interface Form { id?: string; name: string; kind: string; enabled: boolean; prio
     </section>
 
     @if (testFor(); as p) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && testFor.set(null)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? testFor.set(null) : null">
         <form class="a-modal a-form" role="dialog" aria-modal="true" aria-labelledby="pt-t" (ngSubmit)="test(p)">
           <h3 id="pt-t" style="margin:0">Send a test through {{ p.name }}</h3>
           <p class="a-muted" style="margin:0">Goes directly to this provider, skipping the queue. Allowed recipients: your own address or the test recipients in Email settings.</p>
@@ -77,7 +77,7 @@ interface Form { id?: string; name: string; kind: string; enabled: boolean; prio
     }
 
     @if (form(); as f) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && form.set(null)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? form.set(null) : null">
         <form class="a-modal wide a-form" role="dialog" aria-modal="true" aria-labelledby="pf-t" (ngSubmit)="save(f)">
           <h3 id="pf-t" style="margin:0">{{ f.id ? 'Edit ' + f.name : 'Add provider' }}</h3>
           <div class="two">
