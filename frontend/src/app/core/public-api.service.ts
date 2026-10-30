@@ -61,7 +61,10 @@ export class PublicApi {
   unsubscribe(token: string) {
     return this.http.post<{ message: string }>('/api/public/unsubscribe', { token });
   }
-  contact(body: { name: string; email: string; message: string; website: string }) {
+  contactCode(email: string) {
+    return this.http.post<{ message: string }>('/api/public/contact/code', { email });
+  }
+  contact(body: { name: string; email: string; message: string; code: string; website: string }) {
     return this.http.post<{ message: string }>('/api/public/contact', body);
   }
   resumeRequest(email: string) {

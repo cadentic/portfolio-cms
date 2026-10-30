@@ -1,6 +1,7 @@
 package acceptance
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestContactBlockedWords(t *testing.T) {
 	}
 
 	spam := e.Do("POST", "/api/public/contact", map[string]string{
-		"name": "Bot", "email": "bot@example.com", "message": "Buy CHEAP pills today, best prices!"}, nil)
+		"name": "Bot", "email": "bot@example.com", "message": "Buy CHEAP pills today, best prices!", "code": contactCode(e, "bot@example.com")}, nil)
 	if spam.Status != 422 {
 		t.Fatalf("spam contact = %d %s, want 422", spam.Status, spam.Body)
 	}
@@ -32,7 +33,7 @@ func TestContactBlockedWords(t *testing.T) {
 	if n := e.Count(`SELECT count(*) FROM contact_messages`); n != 0 {
 		t.Fatalf("contact_messages = %d, want 0 after blocked submission", n)
 	}
-	if n := e.Count(`SELECT count(*) FROM email_jobs`); n != 0 {
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key NOT LIKE 'contact_otp:%'`); n != 0 {
 		t.Fatalf("email_jobs = %d, want 0 after blocked submission", n)
 	}
 	if n := e.Count(`SELECT hits FROM contact_blocked_words WHERE id = $1`, id); n != 1 {
@@ -41,7 +42,7 @@ func TestContactBlockedWords(t *testing.T) {
 
 	// The seeded starter list is active too.
 	if r := e.Do("POST", "/api/public/contact", map[string]string{
-		"name": "Bot", "email": "bot2@example.com", "message": "Visit our online casino for free spins"}, nil); r.Status != 422 {
+		"name": "Bot", "email": "bot2@example.com", "message": "Visit our online casino for free spins", "code": contactCode(e, "bot2@example.com")}, nil); r.Status != 422 {
 		t.Fatalf("seeded word contact = %d, want 422", r.Status)
 	}
 
@@ -54,7 +55,7 @@ func TestContactBlockedWords(t *testing.T) {
 	}
 
 	ok := e.Do("POST", "/api/public/contact", map[string]string{
-		"name": "Ana", "email": "ana@example.com", "message": "Buy cheap pills? No, I need an Oracle DBA, a specialist."}, nil)
+		"name": "Ana", "email": "ana@example.com", "message": "Buy cheap pills? No, I need an Oracle DBA, a specialist.", "code": contactCode(e, "ana@example.com")}, nil)
 	if ok.Status != 202 {
 		t.Fatalf("genuine contact = %d %s, want 202", ok.Status, ok.Body)
 	}
@@ -70,7 +71,7 @@ func TestContactReviewThenForward(t *testing.T) {
 	e.Server.Cfg.AdminAlertEmail = testenv.AdminEmail
 
 	r := e.Do("POST", "/api/public/contact", map[string]string{
-		"name": "Ana", "email": "ana@example.com", "message": "Could you help with an Oracle 19c upgrade?"}, nil)
+		"name": "Ana", "email": "ana@example.com", "message": "Could you help with an Oracle 19c upgrade?", "code": contactCode(e, "ana@example.com")}, nil)
 	if r.Status != 202 {
 		t.Fatalf("contact = %d %s", r.Status, r.Body)
 	}
@@ -107,5 +108,62 @@ func TestContactReviewThenForward(t *testing.T) {
 	}
 	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key LIKE 'contact_notify:%'`); n != 1 {
 		t.Fatalf("notify jobs = %d, want 1", n)
+	}
+}
+
+var codeRe = regexp.MustCompile(`[0-9]{6}`)
+
+// contactCode asks for a contact verification code for addr and reads it
+// back from the queued email.
+func contactCode(e *testenv.Env, addr string) string {
+	e.T.Helper()
+	if r := e.Do("POST", "/api/public/contact/code", map[string]string{"email": addr}, nil); r.Status != 202 {
+		e.T.Fatalf("contact code for %s = %d %s", addr, r.Status, r.Body)
+	}
+	subject := e.Str(`SELECT subject FROM email_jobs WHERE idempotency_key LIKE 'contact_otp:%' AND to_email = $1
+		ORDER BY created_at DESC LIMIT 1`, addr)
+	return codeRe.FindString(subject)
+}
+
+// A message is accepted only with the code mailed to the sender's address:
+// no code, a wrong code, another address's code or a reused code are refused.
+func TestContactRequiresEmailVerification(t *testing.T) {
+	e := testenv.New(t)
+	msg := func(addr, code string) testenv.Response {
+		return e.Do("POST", "/api/public/contact", map[string]string{
+			"name": "Ana", "email": addr, "message": "Could you help with an Oracle 19c upgrade?", "code": code}, nil)
+	}
+	if r := msg("ana@example.com", ""); r.Status != 403 || !strings.Contains(string(r.Body), "verify your email") {
+		t.Fatalf("no code = %d %s, want 403", r.Status, r.Body)
+	}
+	code := contactCode(e, "ana@example.com")
+	if len(code) != 6 {
+		t.Fatalf("code = %q", code)
+	}
+	wrong := "000000"
+	if code == wrong {
+		wrong = "111111"
+	}
+	if r := msg("ana@example.com", wrong); r.Status != 403 {
+		t.Fatalf("wrong code = %d, want 403", r.Status)
+	}
+	if r := msg("eve@example.com", code); r.Status != 403 {
+		t.Fatalf("someone else's code = %d, want 403", r.Status)
+	}
+	// A resume code never unlocks the contact form, and the other way round.
+	if r := e.Do("POST", "/api/public/resume/verify", map[string]string{"email": "ana@example.com", "code": code}, nil); r.Status == 200 {
+		t.Fatalf("contact code unlocked the resume")
+	}
+	if r := msg("ana@example.com", code); r.Status != 202 {
+		t.Fatalf("right code = %d %s, want 202", r.Status, r.Body)
+	}
+	if r := msg("ana@example.com", code); r.Status != 403 {
+		t.Fatalf("reused code = %d, want 403", r.Status)
+	}
+	if n := e.Count(`SELECT count(*) FROM contact_messages`); n != 1 {
+		t.Fatalf("contact_messages = %d, want 1", n)
+	}
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key LIKE 'contact_otp:%' AND priority = 20`); n != 1 {
+		t.Fatalf("code emails = %d, want 1", n)
 	}
 }

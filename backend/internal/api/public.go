@@ -26,7 +26,8 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/public/unsubscribe", s.limited("unsub", 60, time.Hour, s.unsubscribe))
 	// RFC 8058 one-click: mailbox providers POST "List-Unsubscribe=One-Click".
 	mux.HandleFunc("POST /api/public/unsubscribe/one-click", s.unsubscribeOneClick)
-	mux.HandleFunc("POST /api/public/contact", s.contact)
+	mux.HandleFunc("POST /api/public/contact", s.limited("contact_submit", 30, time.Hour, s.contact))
+	mux.HandleFunc("POST /api/public/contact/code", s.contactCode)
 	mux.HandleFunc("POST /api/public/resume/request", s.resumeRequest)
 	mux.HandleFunc("POST /api/public/resume/verify", s.limited("resume_verify", 20, time.Hour, s.resumeVerify))
 	mux.HandleFunc("GET /api/public/resume/download", s.resumeDownload)
@@ -202,6 +203,7 @@ func (s *Server) contact(w http.ResponseWriter, r *http.Request) {
 		Name    string `json:"name"`
 		Email   string `json:"email"`
 		Message string `json:"message"`
+		Code    string `json:"code"`
 		Website string `json:"website"`
 	}
 	if !decode(w, r, &req) {
@@ -223,19 +225,27 @@ func (s *Server) contact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "please enter your name and a message (10-5000 characters)")
 		return
 	}
+	if word, err := s.checkBlockedWords(r.Context(), name, msg); err != nil {
+		s.internal(w, r, err)
+		return
+	} else if word != "" {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf(blockedWordMsg, word))
+		return
+	}
+	if ok, err := s.verifyContactCode(r.Context(), addr, strings.TrimSpace(req.Code)); err != nil {
+		s.internal(w, r, err)
+		return
+	} else if !ok {
+		writeError(w, http.StatusForbidden, "please verify your email: enter the 6-digit code we sent you, or request a new one")
+		return
+	}
+	// Only verified messages count towards the per-sender limits.
 	ip := s.clientIP(r)
 	if !s.allow(r.Context(), map[string]ratelimit.Rule{
 		"contact:ip:" + ip:      {Limit: 5, Window: time.Hour},
 		"contact:email:" + addr: {Limit: 3, Window: 24 * time.Hour},
 	}) {
 		writeError(w, http.StatusTooManyRequests, "too many messages; please try again later")
-		return
-	}
-	if word, err := s.checkBlockedWords(r.Context(), name, msg); err != nil {
-		s.internal(w, r, err)
-		return
-	} else if word != "" {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf(blockedWordMsg, word))
 		return
 	}
 	var id string
@@ -325,7 +335,7 @@ func (s *Server) resumeVerify(w http.ResponseWriter, r *http.Request) {
 	var id string
 	var hash []byte
 	err = s.DB.QueryRow(r.Context(), `UPDATE resume_otps SET attempts = attempts + 1
-		WHERE id = (SELECT id FROM resume_otps WHERE email=$1 AND used_at IS NULL AND expires_at > now() AND attempts < 5
+		WHERE id = (SELECT id FROM resume_otps WHERE purpose='resume' AND email=$1 AND used_at IS NULL AND expires_at > now() AND attempts < 5
 		            ORDER BY created_at DESC LIMIT 1) RETURNING id, code_hash`, addr).Scan(&id, &hash)
 	if err != nil || !hmac.Equal(hash, s.otpHash(addr, req.Code)) {
 		writeError(w, http.StatusBadRequest, "that code is incorrect or has expired")
