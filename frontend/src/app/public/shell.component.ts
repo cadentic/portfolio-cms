@@ -8,12 +8,13 @@ import { PublicApi } from '../core/public-api.service';
 import { NavCard, profileLinks } from '../core/site-content';
 import { SiteContentService } from '../core/site-content.service';
 import { ResumeModalComponent } from '../shared/resume-modal.component';
+import { ScrollRevealDirective } from '../shared/scroll-reveal.directive';
 import { Toast } from '../shared/toast.service';
 import { UiState } from '../shared/ui-state.service';
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ResumeModalComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ResumeModalComponent, ScrollRevealDirective],
   host: { '(document:keydown.escape)': 'closeMenus()', '(document:click)': 'outside($event)' },
   template: `
     @let c = site.content();
@@ -51,7 +52,7 @@ import { UiState } from '../shared/ui-state.service';
       </div>
     </header>
 
-    <main id="main" tabindex="-1"><router-outlet /></main>
+    <main id="main" tabindex="-1" appScrollReveal><router-outlet /></main>
 
     <footer class="site-footer">
       <div class="wrap">
