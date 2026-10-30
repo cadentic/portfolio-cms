@@ -1,6 +1,8 @@
 package acceptance
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -81,6 +83,19 @@ func TestContactReviewThenForward(t *testing.T) {
 	}
 	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key = $1`, "contact_ack:"+id); n != 1 {
 		t.Fatalf("ack jobs = %d, want 1", n)
+	}
+	// The owner gets a heads-up that carries no part of the message.
+	if got := e.Str(`SELECT to_email::text || ' ' || subject FROM email_jobs WHERE idempotency_key = $1`, "contact_alert:"+id); got !=
+		testenv.AdminEmail+" Someone might have enquired about a project" {
+		t.Fatalf("owner alert = %q", got)
+	}
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key = $1 AND (html_body LIKE '%Oracle 19c%' OR html_body LIKE '%ana@%')`,
+		"contact_alert:"+id); n != 0 {
+		t.Fatal("owner alert includes the message or sender")
+	}
+	// No resume available: the plain acknowledgement, without a resume link.
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key = $1 AND html_body LIKE '%/resume%'`, "contact_ack:"+id); n != 0 {
+		t.Fatal("ack links a resume that does not exist")
 	}
 
 	list := e.Admin("GET", "/api/admin/contact-messages?status=new", nil)
@@ -165,5 +180,30 @@ func TestContactRequiresEmailVerification(t *testing.T) {
 	}
 	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key LIKE 'contact_otp:%' AND priority = 20`); n != 1 {
 		t.Fatalf("code emails = %d, want 1", n)
+	}
+}
+
+// With a resume available, the acknowledgement links to the /resume page,
+// where the sender confirms their email again before downloading.
+func TestContactAckLinksResumePage(t *testing.T) {
+	e := testenv.New(t)
+	pdf := filepath.Join(t.TempDir(), "resume.pdf")
+	if err := os.WriteFile(pdf, []byte("%PDF-1.4 test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.Server.Cfg.ResumeFilePath = pdf
+	r := e.Do("POST", "/api/public/contact", map[string]string{
+		"name": "Ben", "email": "ben@example.com", "message": "Looking for an Oracle DBA for a project.", "code": contactCode(e, "ben@example.com")}, nil)
+	if r.Status != 202 {
+		t.Fatalf("contact = %d %s", r.Status, r.Body)
+	}
+	id := e.Str(`SELECT id::text FROM contact_messages`)
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key = $1 AND html_body LIKE $2`,
+		"contact_ack:"+id, "%"+testenv.SiteURL+"/resume%"); n != 1 {
+		t.Fatal("ack has no /resume link")
+	}
+	// No ADMIN_ALERT_EMAIL and no reply-to: no owner alert, and the message is still accepted.
+	if n := e.Count(`SELECT count(*) FROM email_jobs WHERE idempotency_key = $1`, "contact_alert:"+id); n > 1 {
+		t.Fatalf("owner alerts = %d", n)
 	}
 }
