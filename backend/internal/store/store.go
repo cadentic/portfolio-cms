@@ -20,6 +20,15 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
+// Advisory lock IDs. A session lock and a transaction lock on the same ID block
+// each other, so every use has its own.
+const (
+	LockMigrate     int64 = 7262411001 // Migrate, session lock
+	LockProviders   int64 = 7262411002 // provider seeding at API start, session lock
+	LockResume      int64 = 7262411003 // resume upload and delete
+	LockSiteContent int64 = 7262411004 // site content saves
+)
+
 // Open creates a pgx pool. Neon requires sslmode=require in the URL; the pool
 // keeps connections short-lived so that Neon's autosuspend does not leave
 // dead sockets behind.
@@ -56,11 +65,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 	}
 	defer conn.Release()
 
-	const lockID = 7262411001
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, LockMigrate); err != nil {
 		return err
 	}
-	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, lockID) //nolint:errcheck
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, LockMigrate) //nolint:errcheck
 
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {

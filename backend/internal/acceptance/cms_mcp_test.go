@@ -117,7 +117,7 @@ func TestMCP_OAuthLoginAndCreatePage(t *testing.T) {
 
 	created := rpc(3, "tools/call", map[string]any{"name": "create_page", "arguments": map[string]any{
 		"kind": "article", "title": "RMAN restores without drama",
-		"hero":            map[string]any{"type": "youtube", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		"hero":            map[string]any{"type": "youtube", "url": "https://www.youtube.com/watch?v=gXT9izr0ljQ"},
 		"body_markdown":   "## Why\n\nBecause **backups** are only as good as restores.\n\n- one\n- two",
 		"seo_description": "A practical restore checklist.",
 	}})

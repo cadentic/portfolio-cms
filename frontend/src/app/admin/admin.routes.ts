@@ -1,6 +1,9 @@
 import { Routes } from '@angular/router';
 import { ownerGuard } from './admin.guard';
 import { AdminLayoutComponent } from './layout.component';
+import { unsavedChangesGuard } from './site/unsaved-changes.guard';
+
+const siteEditor = () => import('./site/site-content-editor.component').then((m) => m.SiteContentEditorComponent);
 
 export const ADMIN_ROUTES: Routes = [
   { path: 'login', loadComponent: () => import('./login.component').then((m) => m.LoginComponent) },
@@ -26,6 +29,11 @@ export const ADMIN_ROUTES: Routes = [
           { path: 'suppressions', loadComponent: () => import('./email/suppressions.component').then((m) => m.SuppressionsComponent) },
         ],
       },
+      { path: 'site', pathMatch: 'full', redirectTo: 'site/home' },
+      { path: 'site/home', loadComponent: siteEditor, data: { area: 'home' }, canDeactivate: [unsavedChangesGuard] },
+      { path: 'site/profile', loadComponent: siteEditor, data: { area: 'profile' }, canDeactivate: [unsavedChangesGuard] },
+      { path: 'site/videos', loadComponent: siteEditor, data: { area: 'videos' }, canDeactivate: [unsavedChangesGuard] },
+      { path: 'site/legal', loadComponent: () => import('./site/legal-pages.component').then((m) => m.LegalPagesComponent) },
       { path: 'content', loadComponent: () => import('./content/pages.component').then((m) => m.PagesComponent) },
       { path: 'content/:id', loadComponent: () => import('./content/page-editor.component').then((m) => m.PageEditorComponent) },
       { path: 'media', loadComponent: () => import('./media/media-library.component').then((m) => m.MediaLibraryComponent) },

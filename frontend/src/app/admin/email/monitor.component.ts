@@ -109,7 +109,7 @@ interface JobEvent { id: string; provider_kind: string; event_type: string; occu
     </section>
 
     @if (detail(); as d) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && detail.set(null)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? detail.set(null) : null">
         <div class="a-modal wide" role="dialog" aria-modal="true" aria-labelledby="job-t">
           <div class="a-row between"><h3 id="job-t" style="margin:0">Job to {{ d.job.to_email }}</h3><button class="ab sm" type="button" (click)="detail.set(null)">Close</button></div>
           <dl class="a-kv" style="margin-top:12px">

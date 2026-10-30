@@ -27,7 +27,7 @@ is edited in the console under Subscribers & Email → Settings and Providers.
 | `EMAIL_MAILJET_API_KEY`, `EMAIL_MAILJET_SECRET_KEY` | for Mailjet | | Mailjet API key pair |
 | `EMAIL_MAILJET_WEBHOOK_SECRET` | for Mailjet | | Password for the Mailjet webhook URL |
 | `EMAIL_*` (any) | | | Providers added in the console may reference any variable matching `EMAIL_[A-Z0-9_]{2,64}` |
-| `RESUME_FILE_PATH` | | | PDF served after email verification |
+| `RESUME_FILE_PATH` | | | Fallback PDF served after email verification. The owner normally uploads the resume in Admin → Site profile → Resume; that upload is kept in private media storage and takes precedence. With neither, the resume buttons are hidden |
 | `MEDIA_STORAGE` | | `local` | Where admin uploads are kept: `local`, `gcs` or `azure`. Buckets stay private; files are served only through `GET /media/<key>` |
 | `MEDIA_LOCAL_DIR` | | `/data/media` | Directory for `local` storage (a Docker volume locally) |
 | `MEDIA_MAX_UPLOAD_MB` | | `30` | Largest accepted upload. Keep it under 32 on Cloud Run, whose HTTP/1 request limit is 32 MiB |

@@ -110,7 +110,7 @@ interface ImportPreview { token: string; summary: Record<string, number>; rows: 
     </div>
 
     @if (showAdd()) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && showAdd.set(false)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? showAdd.set(false) : null">
         <form class="a-modal a-form" (ngSubmit)="add()" role="dialog" aria-modal="true" aria-labelledby="add-t">
           <h2 id="add-t">Add subscriber</h2>
           <p>Only add people who have agreed to receive the newsletter. By default they get a confirmation email (double opt-in).</p>

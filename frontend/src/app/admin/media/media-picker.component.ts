@@ -21,7 +21,7 @@ import { ACCEPT, MediaKind, displayName, uploadMedia } from './media-upload';
     @if (error()) { <p class="a-err" role="alert" style="margin:4px 0 0">{{ error() }}</p> }
 
     @if (open()) {
-      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget && open.set(false)">
+      <div class="a-modal-bg" (click)="$event.target === $event.currentTarget ? open.set(false) : null">
         <div class="a-modal wide a-form" role="dialog" aria-modal="true" aria-labelledby="mp-t">
           <div class="a-row between"><h3 id="mp-t" style="margin:0">Media library</h3>
             <button class="ab sm" type="button" (click)="open.set(false)" aria-label="Close">✕</button></div>

@@ -161,6 +161,24 @@ subdomain.
    and redeploy.
 6. **Media**: copy the WordPress images into the bucket (next section).
 
+## Site text
+
+The home page, profile, organisations, videos, FAQ, SEO text and the legal
+pages are edited in the admin under Site content (Home page, Site profile,
+Videos, Legal pages). Changes show on the site within a few seconds, with no
+deploy. After the first deploy that includes them:
+
+1. **Resume**: upload the PDF in Site profile → Resume. Until a resume exists
+   (or `RESUME_FILE_PATH` is set) the resume buttons are hidden, but the FAQ
+   answer to "How can I get his resume?" still tells visitors and search
+   engines to use the button. Edit or remove that answer in Home page → FAQ if
+   no resume will be uploaded, and keep it in step if you rename the button.
+2. **Featured video**: set the real title and upload date of the YouTube
+   video in Videos.
+3. **AI policy**: its "Content management" bullet says what the AI assistant
+   connected over MCP can do: edit pages, articles and site text, with every
+   change in the audit log. If that changes, update the bullet in Legal pages.
+
 ## Media
 
 Uploads and the imported WordPress images live in one private place, set by
@@ -262,7 +280,19 @@ complaint rates do.
 ## Rolling back
 
 Re-run the playbook from an older commit (`git checkout <sha>` first), or in
-the cloud console route traffic back to the previous revision. The
-migrations so far only add tables and columns, so an older image runs fine
-against a newer schema; check this before rolling back past a migration that
-changes or drops something.
+the cloud console route traffic back to the previous revision. Roll back `api`
+and `web` together, `web` first: the web app takes the site text from the API
+(`/api/public/site-content`), which older APIs do not serve, so a newer web app
+in front of an older API fails every page (503) once its cached copy has gone.
+
+Most migrations only add tables and columns, so an older image runs against a
+newer schema. Check each migration you roll back past for anything more:
+
+- **0007** turns the privacy notice, terms and AI policy into CMS pages. An API
+  older than 0007 lists those three paths in the sitemap itself as well, so
+  each appears twice, and its page editor refuses to save them ("reserved"
+  slug). The pages still display. Roll forward before editing them. The same
+  mix exists for a few minutes during the deploy that adds 0007, while the old
+  API revision still serves.
+- **0008** deletes articles left behind by old end-to-end test runs. Rolling
+  back does not bring them back.

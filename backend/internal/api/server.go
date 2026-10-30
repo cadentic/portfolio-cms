@@ -32,6 +32,7 @@ import (
 	"github.com/cadentic/portfolio-cms/backend/internal/providers"
 	"github.com/cadentic/portfolio-cms/backend/internal/ratelimit"
 	"github.com/cadentic/portfolio-cms/backend/internal/settings"
+	"github.com/cadentic/portfolio-cms/backend/internal/sitecontent"
 	"github.com/cadentic/portfolio-cms/backend/internal/subscribers"
 	"github.com/cadentic/portfolio-cms/backend/internal/tokens"
 )
@@ -55,6 +56,7 @@ type Server struct {
 	OAuth       *oauth.Server
 	MCP         *mcp.Server
 	Media       media.Storage
+	SiteContent *sitecontent.Service
 }
 
 func (s *Server) Routes() http.Handler {
