@@ -6,7 +6,7 @@ import { Observable } from 'rxjs';
 import { AdminApi, errMsg } from '../admin-api.service';
 
 interface Status {
-  configured: boolean; redirect_url: string; connected: boolean; account_email: string; connected_at: string | null;
+  enabled: boolean; configured: boolean; redirect_url: string; connected: boolean; account_email: string; connected_at: string | null;
   label_resource: string; label_name: string; attested_by: string; attested_at: string | null; paused: boolean; running: boolean;
   last_sync_at: string | null; next_sync_at: string | null; last_result: { summary?: Record<string, number>; trigger?: string } | null;
   last_error: string; list_size: number;
@@ -33,7 +33,12 @@ const STATUS_TEXT: Record<string, string> = {
       @if (error()) { <p class="a-err" role="alert">{{ error() }}</p> }
 
       @if (st(); as s) {
-        @if (!s.configured) {
+        @if (!s.enabled) {
+          <p class="a-err">The Google Contacts list is turned off on this server. Turn it on with
+            <span class="a-mono">google_contacts_enabled = true</span> in secret.tfvars (or
+            <span class="a-mono">python3 installSetup.py --google-contacts</span>) and deploy; locally, set
+            <span class="a-mono">GOOGLE_CONTACTS_ENABLED=true</span> in .env.</p>
+        } @else if (!s.configured) {
           <p class="a-err">Google sign-in is not set up on the server yet. Create an OAuth client in Google Cloud (see docs/google-contacts.md),
             add <span class="a-mono">{{ s.redirect_url }}</span> as an authorised redirect URI, and set
             <span class="a-mono">GOOGLE_OAUTH_CLIENT_ID</span> and <span class="a-mono">GOOGLE_OAUTH_CLIENT_SECRET</span>.</p>

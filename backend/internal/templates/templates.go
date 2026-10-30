@@ -139,6 +139,14 @@ var System = []Input{
 		Subject: "You're subscribed", HTMLBody: `<h1 style="font-size:24px;margin:0 0 12px">Welcome aboard</h1><p>Thanks for confirming, {{first_name}}. You'll get new articles, videos and occasional professional updates. You can <a href="{{unsubscribe_url}}">unsubscribe</a> at any time.</p>`},
 	{Slug: "contact_ack", Name: "Contact form acknowledgement", Category: "transactional",
 		Subject: "Thanks for getting in touch", HTMLBody: `<p>Hi {{first_name}},</p><p>Thanks for your message. I've received it and will reply as soon as I can.</p><p style="color:#596675;font-size:13px">This is an automatic acknowledgement of a message sent from {{site_name}}.</p>`},
+	{Slug: "contact_ack_resume", Name: "Contact form acknowledgement (with resume link)", Category: "transactional",
+		Subject: "Thanks for getting in touch", HTMLBody: `<p>Hi {{first_name}},</p><p>Thanks for your message. I've received it.</p><p>While you wait, you can download my resume. You'll confirm your email address once more with a one-time code, then the download starts. I'll reply to your message after that.</p>
+<p style="margin:26px 0"><a href="{{resume_url}}" style="background:#8ef0c4;color:#09291f;text-decoration:none;font-weight:700;padding:13px 20px;border-radius:999px;display:inline-block">Get the resume</a></p>
+<p style="color:#596675;font-size:13px">This is an automatic acknowledgement of a message sent from {{site_name}}.</p>`},
+	{Slug: "contact_alert_owner", Name: "New enquiry alert (owner)", Category: "transactional",
+		Subject: "Someone might have enquired about a project", HTMLBody: `<p>Someone might have enquired about the project. Please look into the matter by logging in to the system.</p>
+<p style="margin:26px 0"><a href="{{admin_url}}" style="background:#8ef0c4;color:#09291f;text-decoration:none;font-weight:700;padding:13px 20px;border-radius:999px;display:inline-block">Open messages</a></p>
+<p style="color:#596675;font-size:13px">The message itself is only shown after you sign in.</p>`},
 	{Slug: "contact_notify", Name: "Contact form notification (owner)", Category: "transactional",
 		Subject: "New enquiry from {{sender_name}}", HTMLBody: `<p><strong>{{sender_name}}</strong> &lt;{{sender_email}}&gt; wrote:</p><blockquote style="border-left:3px solid #8ef0c4;padding-left:12px;color:#334">{{message}}</blockquote>`},
 	{Slug: "contact_otp", Name: "Contact form email verification code", Category: "transactional",

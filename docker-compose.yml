@@ -34,8 +34,10 @@ x-api-env: &api-env
   EMAIL_BREVO_WEBHOOK_SECRET: local-brevo-webhook
   EMAIL_MAILJET_WEBHOOK_SECRET: local-mailjet-webhook
   RESUME_FILE_PATH: ${RESUME_FILE_PATH:-}
-  # Google Contacts sync; add http://localhost:4000/api/google/oauth/callback
-  # as a redirect URI on the OAuth client (docs/google-contacts.md).
+  # Google Contacts list, off unless GOOGLE_CONTACTS_ENABLED=true in .env. Add
+  # http://localhost:4000/api/google/oauth/callback as a redirect URI on the
+  # OAuth client (docs/google-contacts.md).
+  GOOGLE_CONTACTS_ENABLED: ${GOOGLE_CONTACTS_ENABLED:-false}
   GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
   GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
   # Uploaded media. Local disk here; MEDIA_STORAGE=gcs|azure in the cloud.

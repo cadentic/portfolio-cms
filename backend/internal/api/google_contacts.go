@@ -11,8 +11,13 @@ import (
 
 const googleContactsAdminPath = "/admin/email/google-contacts"
 
+// googleContactsRoutes registers the admin endpoints. When the feature is off
+// (GOOGLE_CONTACTS_ENABLED) only the status call exists, so the admin can hide it.
 func (s *Server) googleContactsRoutes(m *http.ServeMux) {
 	m.HandleFunc("GET /api/admin/google-contacts", s.googleContactsStatus)
+	if !s.googleContactsOn() {
+		return
+	}
 	m.HandleFunc("POST /api/admin/google-contacts/connect", s.googleContactsConnect)
 	m.HandleFunc("POST /api/admin/google-contacts/disconnect", s.googleContactsDisconnect)
 	m.HandleFunc("GET /api/admin/google-contacts/labels", s.googleContactsLabels)
@@ -35,7 +40,15 @@ func (s *Server) googleContactsError(w http.ResponseWriter, r *http.Request, err
 	}
 }
 
+func (s *Server) googleContactsOn() bool {
+	return s.Cfg.GoogleContactsEnabled && s.GoogleContacts != nil
+}
+
 func (s *Server) googleContactsStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.googleContactsOn() {
+		writeJSON(w, 200, map[string]bool{"enabled": false})
+		return
+	}
 	st, err := s.GoogleContacts.Status(r.Context())
 	if err != nil {
 		s.internal(w, r, err)

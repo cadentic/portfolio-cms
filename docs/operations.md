@@ -89,6 +89,22 @@ Prometheus text format.
 - The worker keeps message bodies for `job_body_retention_days` (90) for
   retries and audits, then deletes them.
 
+## Contact form emails
+
+A visitor verifies their email with a one-time code, then sends the message.
+Two emails go out at once:
+
+- **To the visitor:** an acknowledgement. When a resume is available (uploaded
+  in Site profile → Resume, or `RESUME_FILE_PATH`), it links to the `/resume`
+  page, where they confirm their email again with a new code and download it
+  (template `contact_ack_resume`, otherwise `contact_ack`).
+- **To the owner** (`ADMIN_ALERT_EMAIL`, else the reply-to address in Email
+  settings): "Someone might have enquired about a project", with a link to
+  Admin → Messages (template `contact_alert_owner`). It carries no part of the
+  message; read it, reply, or press "Forward to inbox" there.
+
+Both templates can be edited in Admin → Subscribers & Email → Templates.
+
 ## Personal data retention
 
 Matches the privacy notice at `/privacy`; purges run every 6 hours.

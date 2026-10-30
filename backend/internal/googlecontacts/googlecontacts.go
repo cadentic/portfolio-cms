@@ -102,6 +102,7 @@ func (s *Service) peopleURL() string { return or(s.PeopleURL, "https://people.go
 // --- status -------------------------------------------------------------------
 
 type Status struct {
+	Enabled      bool           `json:"enabled"` // always true here; the API answers {"enabled":false} when off
 	Configured   bool           `json:"configured"`
 	RedirectURL  string         `json:"redirect_url"`
 	Connected    bool           `json:"connected"`
@@ -122,7 +123,7 @@ type Status struct {
 }
 
 func (s *Service) Status(ctx context.Context) (*Status, error) {
-	st := &Status{Configured: s.Configured(), RedirectURL: s.RedirectURL()}
+	st := &Status{Enabled: true, Configured: s.Configured(), RedirectURL: s.RedirectURL()}
 	var res []byte
 	var started *time.Time
 	err := s.DB.QueryRow(ctx, `SELECT refresh_token_enc IS NOT NULL, coalesce(account_email,''), connected_at, coalesce(connected_by,''),

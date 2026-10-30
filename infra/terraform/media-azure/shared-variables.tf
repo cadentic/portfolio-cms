@@ -125,8 +125,17 @@ variable "email_mailjet_webhook_secret" {
   }
 }
 
-# Google Contacts sync (Admin -> Email -> Google Contacts). Leave both empty to
-# turn it off. See docs/google-contacts.md for the Google Cloud setup.
+# Google Contacts list (Admin -> Subscribers & Email -> Google Contacts). Off by
+# default; turning it on needs the OAuth client below. See docs/google-contacts.md.
+variable "google_contacts_enabled" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !var.google_contacts_enabled || (var.google_oauth_client_id != "" && var.google_oauth_client_secret != "")
+    error_message = "google_contacts_enabled = true needs google_oauth_client_id and google_oauth_client_secret (docs/google-contacts.md)."
+  }
+}
+
 variable "google_oauth_client_id" {
   type    = string
   default = ""

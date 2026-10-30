@@ -56,7 +56,9 @@ type Config struct {
 	AzureIdentityHeader   string
 	AzureClientID         string
 
-	// Google Contacts sync (OAuth web client with the People API enabled).
+	// Google Contacts sync. Off unless GOOGLE_CONTACTS_ENABLED=true; then it
+	// needs an OAuth web client with the People API enabled.
+	GoogleContactsEnabled   bool
 	GoogleOAuthClientID     string
 	GoogleOAuthClientSecret string
 
@@ -93,6 +95,7 @@ func Load() (*Config, error) {
 		GA4ID:                   os.Getenv("GA4_MEASUREMENT_ID"),
 		BlogEnabled:             getBool("BLOG_ENABLED", true),
 		BrevoBaseURL:            os.Getenv("EMAIL_BREVO_BASE_URL"),
+		GoogleContactsEnabled:   getBool("GOOGLE_CONTACTS_ENABLED", false),
 		GoogleOAuthClientID:     strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
 		GoogleOAuthClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")),
 		MailjetBaseURL:          os.Getenv("EMAIL_MAILJET_BASE_URL"),
@@ -122,6 +125,9 @@ func Load() (*Config, error) {
 	}
 	if len(c.AdminUIDs) == 0 && len(c.AdminEmails) == 0 {
 		errs = append(errs, errors.New("set ADMIN_UIDS and/or ADMIN_EMAILS to authorise the owner"))
+	}
+	if c.GoogleContactsEnabled && (c.GoogleOAuthClientID == "" || c.GoogleOAuthClientSecret == "") {
+		errs = append(errs, errors.New("GOOGLE_CONTACTS_ENABLED=true needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET"))
 	}
 	if c.MediaMaxUploadBytes <= 0 {
 		errs = append(errs, errors.New("MEDIA_MAX_UPLOAD_MB must be positive"))

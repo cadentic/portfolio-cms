@@ -1,5 +1,19 @@
 # Google Contacts list
 
+**Optional, off by default.** Turn it on or off with:
+
+- `python3 installSetup.py --google-contacts` (asks for the OAuth client id and
+  secret) or `--no-google-contacts`, then deploy; or
+- `google_contacts_enabled = true | false` in `infra/terraform/secret.tfvars`,
+  then deploy; or
+- locally, `GOOGLE_CONTACTS_ENABLED=true` in `.env`, then `docker compose up -d`.
+
+When it is off, the admin hides the Google Contacts tab, the only endpoint left
+is the status call (`GET /api/admin/google-contacts` answers `{"enabled":false}`),
+the Google callback does not exist, and the worker never syncs. Contacts already
+on the list stay (still out of the regular newsletter), and the stored Google
+connection is kept for when it is turned back on.
+
 Contacts that carry one chosen Google Contacts label are copied into the
 newsletter subscribers as a **separate list** (source `google_contacts`).
 
@@ -63,12 +77,15 @@ Use any Google Cloud project (the one hosting the site is fine).
    - `https://cadentic.dev/api/google/oauth/callback` (your site host; the
      admin page shows the exact URI it uses)
    - `http://localhost:4000/api/google/oauth/callback` for the local stack
-4. Put the client ID and secret in the configuration:
-   - Cloud: `google_oauth_client_id` and `google_oauth_client_secret` in
-     `infra/terraform/secret.tfvars`, then deploy. The secret goes to Secret
-     Manager / Key Vault / the VPS `.env` like the other secrets.
-   - Local: `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`,
-     then `docker compose up -d`.
+4. Turn the feature on with the client ID and secret:
+   - Cloud: `python3 installSetup.py --google-contacts` (or set
+     `google_contacts_enabled = true`, `google_oauth_client_id` and
+     `google_oauth_client_secret` in `infra/terraform/secret.tfvars`), then
+     deploy. The secret goes to Secret Manager / Key Vault / the VPS `.env`
+     like the other secrets, and only while the feature is on.
+   - Local: `GOOGLE_CONTACTS_ENABLED=true`, `GOOGLE_OAUTH_CLIENT_ID` and
+     `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`, then `docker compose up -d`.
+   The API refuses to start when the feature is on without both values.
 
 ## Security notes
 

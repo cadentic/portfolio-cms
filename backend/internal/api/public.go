@@ -30,7 +30,9 @@ func (s *Server) publicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/public/contact", s.limited("contact_submit", 30, time.Hour, s.contact))
 	mux.HandleFunc("POST /api/public/contact/code", s.contactCode)
 	mux.HandleFunc("POST /api/public/resume/request", s.resumeRequest)
-	mux.HandleFunc("GET "+googlecontacts.CallbackPath, s.limited("google_oauth_callback", 30, time.Hour, s.googleOAuthCallback))
+	if s.googleContactsOn() {
+		mux.HandleFunc("GET "+googlecontacts.CallbackPath, s.limited("google_oauth_callback", 30, time.Hour, s.googleOAuthCallback))
+	}
 	mux.HandleFunc("POST /api/public/resume/verify", s.limited("resume_verify", 20, time.Hour, s.resumeVerify))
 	mux.HandleFunc("GET /api/public/resume/download", s.resumeDownload)
 
@@ -257,12 +259,23 @@ func (s *Server) contact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if _, err := s.Mailer.Send(ctx, s.DB, mailer.Request{Template: "contact_ack", To: email.Address{Email: addr, Name: name},
-		IdempotencyKey: "contact_ack:" + id}); err != nil {
+	// The acknowledgement links to the /resume page (download after a fresh
+	// email code) when a resume is available.
+	ack := mailer.Request{Template: "contact_ack", To: email.Address{Email: addr, Name: name}, IdempotencyKey: "contact_ack:" + id}
+	if kind, _, err := s.resumeSource(ctx); err == nil && kind != "none" {
+		ack.Template, ack.Vars = "contact_ack_resume", map[string]string{"resume_url": s.Cfg.PublicSiteURL + "/resume"}
+	}
+	if _, err := s.Mailer.Send(ctx, s.DB, ack); err != nil {
 		s.Log.Error("contact ack enqueue", "err", err)
 	}
-	// The owner is not emailed here: the message waits in the admin until the
-	// owner forwards it to their inbox (see forwardContactMessage).
+	// The owner gets a heads-up without the message: it waits in the admin
+	// until the owner reads it or forwards it (see forwardContactMessage).
+	if owner := s.ownerEmail(r); owner != "" {
+		if _, err := s.Mailer.Send(ctx, s.DB, mailer.Request{Template: "contact_alert_owner", To: email.Address{Email: owner},
+			IdempotencyKey: "contact_alert:" + id, Vars: map[string]string{"admin_url": s.Cfg.PublicSiteURL + "/admin/messages"}}); err != nil {
+			s.Log.Error("contact owner alert enqueue", "err", err)
+		}
+	}
 	writeJSON(w, http.StatusAccepted, ok)
 }
 
